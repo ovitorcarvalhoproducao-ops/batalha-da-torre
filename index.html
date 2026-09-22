@@ -171,6 +171,21 @@
                 setTrios(prev => ({ ...prev, [nextIndex]: [] }));
             };
 
+            // Proteção contra atualização/fechamento acidental da página
+            useEffect(() => {
+                const handleBeforeUnload = (e) => {
+                    e.preventDefault();
+                    // O navegador exige o returnValue para exibir o alerta padrão
+                    e.returnValue = ''; 
+                };
+                
+                window.addEventListener('beforeunload', handleBeforeUnload);
+                
+                return () => {
+                    window.removeEventListener('beforeunload', handleBeforeUnload);
+                };
+            }, []);
+
             useEffect(() => {
                 lucide.createIcons();
             });
