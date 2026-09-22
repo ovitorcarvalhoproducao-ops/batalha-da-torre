@@ -34,6 +34,7 @@
                 linear-gradient(90deg, rgba(220, 38, 38, 0.08) 1px, transparent 1px);
             background-size: 60px 60px;
             background-position: center center;
+            transition: background-color 0.3s ease;
         }
 
         /* Ocultar scrollbar dos trios mas permitir rolagem */
@@ -42,15 +43,66 @@
         ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 10px; }
         ::-webkit-scrollbar-thumb:hover { background: #52525b; }
 
-        /* Estilos para o efeito de peso e movimento 3D dos trios */
+        /* Estilos para o efeito de peso e movimento 3D dos trios e modais */
         .trio-tilt-card {
-            transition: transform 0.15s cubic-bezier(0.03, 0.98, 0.52, 0.99), box-shadow 0.2s ease;
+            transition: transform 0.15s cubic-bezier(0.01, 0.98, 0.52, 0.99), box-shadow 0.2s ease;
             transform-style: preserve-3d;
             will-change: transform;
         }
+
+        /* Animação fluida de entrada para os Popups */
+        @keyframes modal-pop {
+            0% { opacity: 0; transform: scale(0.95) translateY(15px); }
+            100% { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .animate-modal-pop {
+            animation: modal-pop 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        /* REGRAS DE INVERSÃO PARA O MODO CLARO */
+        body.light-mode {
+            background-color: #f4f4f5; /* Fundo cinza super claro */
+            background-image: 
+                linear-gradient(rgba(220, 38, 38, 0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(220, 38, 38, 0.1) 1px, transparent 1px);
+            color: #18181b;
+        }
+        
+        /* Ajuste de Letras no Modo Claro */
+        body.light-mode .text-zinc-100 { color: #18181b !important; }
+        body.light-mode .text-zinc-200 { color: #27272a !important; }
+        body.light-mode .text-zinc-300 { color: #3f3f46 !important; }
+        body.light-mode .text-zinc-400 { color: #52525b !important; }
+        body.light-mode .text-zinc-500 { color: #71717a !important; }
+        body.light-mode .text-zinc-600 { color: #a1a1aa !important; }
+
+        /* Ajuste dos Vidros (Liquid Glass Claro) */
+        body.light-mode .bg-zinc-900\/80 { background-color: rgba(255, 255, 255, 0.8) !important; }
+        body.light-mode .bg-zinc-900\/50 { background-color: rgba(255, 255, 255, 0.9) !important; }
+        body.light-mode .bg-black\/50 { background-color: rgba(255, 255, 255, 0.6) !important; }
+        body.light-mode .bg-black\/40 { background-color: rgba(255, 255, 255, 0.4) !important; }
+        body.light-mode .bg-black\/20 { background-color: rgba(255, 255, 255, 0.2) !important; }
+        body.light-mode .bg-zinc-800\/80 { background-color: rgba(255, 255, 255, 0.95) !important; }
+        body.light-mode .bg-zinc-800 { background-color: #e4e4e7 !important; }
+        
+        /* Bordas no modo claro */
+        body.light-mode .border-white\/10 { border-color: rgba(0,0,0,0.1) !important; }
+        body.light-mode .border-white\/5 { border-color: rgba(0,0,0,0.05) !important; }
+        body.light-mode .border-zinc-800,
+        body.light-mode .border-zinc-700,
+        body.light-mode .border-zinc-700\/80,
+        body.light-mode .border-zinc-700\/50 { border-color: rgba(0,0,0,0.1) !important; }
+
+        /* Ajustes Visuais Específicos do Modo Claro */
+        body.light-mode .to-zinc-900 { --tw-gradient-to: rgba(255, 255, 255, 0.6) !important; }
+        body.light-mode input::placeholder { color: #a1a1aa !important; }
+
+        /* Garantir Leitura do Capitão Amarelo no Fundo Branco */
+        body.light-mode .text-yellow-400 { color: #b45309 !important; } /* Amber mais escuro */
+        body.light-mode .text-yellow-500 { color: #d97706 !important; } 
     </style>
 </head>
-<body class="text-zinc-100 font-unbounded selection:bg-red-500/30 overflow-x-hidden">
+<body class="text-zinc-100 font-unbounded selection:bg-red-500/30 overflow-x-hidden transition-colors duration-300">
     <div id="root"></div>
 
     <script type="text/babel">
@@ -65,6 +117,9 @@
         };
 
         function App() {
+            // Estado de Tema Claro / Escuro
+            const [isLightMode, setIsLightMode] = useState(false);
+
             // Estados do Sistema de Batalha
             const [newMcName, setNewMcName] = useState('');
             const [warning, setWarning] = useState('');
@@ -80,20 +135,32 @@
             const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, mc: null, trioId: null });
             const [confirmTrioRemoval, setConfirmTrioRemoval] = useState({ isOpen: false, trioId: null });
 
-            // Estados do Sorteio
+            // Estados do Sorteio e Configurações
             const [isShuffling, setIsShuffling] = useState(false);
             const [countdown, setCountdown] = useState(5);
+            const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+            const [configCountdown, setConfigCountdown] = useState(5);
+            const [configShuffleSteps, setConfigShuffleSteps] = useState(5);
 
             // Estado do Modal de Ajuda
             const [isHelpOpen, setIsHelpOpen] = useState(false);
 
             // Estados de Customização Visual (Header)
             const [titleText, setTitleText] = useState('Batalha da Torre');
-            const [titleColor, setTitleColor] = useState('#ef4444'); // Vermelho padrão
+            const [titleColor, setTitleColor] = useState('#ef4444'); 
             const [subtitleText, setSubtitleText] = useState('Draft Oficial de Trios');
-            const [subtitleColor, setSubtitleColor] = useState('#a1a1aa'); // Zinco padrão
+            const [subtitleColor, setSubtitleColor] = useState('#a1a1aa'); 
             const [logoImg, setLogoImg] = useState(null);
             const [logoZoom, setLogoZoom] = useState(1);
+
+            // Efeito para ativar/desativar a classe na tag Body do site inteiro
+            useEffect(() => {
+                if (isLightMode) {
+                    document.body.classList.add('light-mode');
+                } else {
+                    document.body.classList.remove('light-mode');
+                }
+            }, [isLightMode]);
 
             const sortedAvailableMCs = useMemo(() => {
                 return [...availableMCs].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
@@ -105,7 +172,7 @@
                     const reader = new FileReader();
                     reader.onloadend = () => {
                         setLogoImg(reader.result);
-                        setLogoZoom(1); // Reseta o zoom ao upar nova imagem
+                        setLogoZoom(1);
                     };
                     reader.readAsDataURL(file);
                 }
@@ -163,14 +230,12 @@
                     return;
                 }
 
-                // Remove do local de origem
                 if (sourceId === 'available') {
                     setAvailableMCs(prev => prev.filter(mc => mc.id !== mcId));
                 } else {
                     setTrios(prev => ({ ...prev, [sourceId]: prev[sourceId].filter(mc => mc.id !== mcId) }));
                 }
 
-                // Adiciona no novo local
                 if (targetId === 'available') {
                     setAvailableMCs(prev => [...prev, mcToMove]);
                 } else {
@@ -237,9 +302,9 @@
 
             const startShuffle = () => {
                 setIsShuffling(true);
-                setCountdown(5);
+                setCountdown(configCountdown);
 
-                let currentCount = 5;
+                let currentCount = configCountdown;
                 const timer = setInterval(() => {
                     currentCount -= 1;
                     if (currentCount > 0) {
@@ -290,9 +355,9 @@
                     return newArray;
                 };
 
-                for (let step = 1; step <= 5; step++) {
+                for (let step = 1; step <= configShuffleSteps; step++) {
                     await new Promise(resolve => {
-                        const isLastStep = step === 5;
+                        const isLastStep = step === configShuffleSteps;
                         const nextTrioValues = getDerangement(
                             currentTrioValues, 
                             isLastStep ? originalTrioValues : null
@@ -338,10 +403,19 @@
             }, []);
 
             return (
-                <div className="min-h-screen text-zinc-100 p-4 md:p-6 pb-20 relative z-10">
+                <div className="min-h-screen p-4 md:p-6 pb-20 relative z-10">
                     {/* Cabeçalho Editável */}
                     <header className="mb-10 text-center flex flex-col items-center justify-center space-y-3 relative z-10 mt-4">
                         
+                        {/* Botão de Tema (Claro/Escuro) */}
+                        <button 
+                            onClick={() => setIsLightMode(!isLightMode)}
+                            className="absolute top-0 left-0 p-2 text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1.5 text-[10px] uppercase tracking-widest font-bold cursor-pointer"
+                        >
+                            <Icon name={isLightMode ? "moon" : "sun"} size={16} />
+                            <span className="hidden sm:inline">{isLightMode ? "Modo Escuro" : "Modo Claro"}</span>
+                        </button>
+
                         {/* Botão de Como Usar */}
                         <button 
                             onClick={() => setIsHelpOpen(true)}
@@ -392,7 +466,6 @@
                             )}
                         </div>
 
-                        {}
                         {/* Título Editável */}
                         <div className="relative group flex items-center justify-center w-full max-w-2xl">
                             <input 
@@ -402,7 +475,7 @@
                                 style={{ color: titleColor }}
                                 className="text-xl md:text-4xl font-black uppercase tracking-widest bg-transparent border-b border-transparent focus:border-red-500/50 outline-none text-center w-full transition-colors pb-1"
                             />
-                            <div className="absolute right-0 translate-x-[120%] opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center">
+                            <div className="absolute right-0 translate-x-[120%] opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center z-20">
                                 <label className="text-[9px] text-zinc-500 mb-1">Cor</label>
                                 <input 
                                     type="color" 
@@ -422,7 +495,7 @@
                                 style={{ color: subtitleColor }}
                                 className="text-sm font-medium tracking-wide bg-transparent border-b border-transparent focus:border-zinc-500 outline-none text-center w-full transition-colors pb-1"
                             />
-                            <div className="absolute right-0 translate-x-[120%] opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center">
+                            <div className="absolute right-0 translate-x-[120%] opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center z-20">
                                 <input 
                                     type="color" 
                                     value={subtitleColor} 
@@ -432,17 +505,28 @@
                             </div>
                         </div>
 
-                        {/* Botão de Sorteio */}
-                        <button 
-                            onClick={startShuffle}
-                            className="mt-5 px-6 py-2.5 bg-purple-700 hover:bg-purple-600 text-white rounded-full font-bold uppercase tracking-widest text-xs flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(126,34,206,0.5)] cursor-pointer hover:scale-105"
-                        >
-                            <Icon name="shuffle" size={16} />
-                            Sortear Ordem
-                        </button>
+                        {}
+                        <div className="mt-5 flex items-center justify-center gap-3 relative z-20">
+                            <button 
+                                onClick={startShuffle}
+                                className="px-6 py-2.5 bg-purple-700 hover:bg-purple-600 text-white rounded-full font-bold uppercase tracking-widest text-xs flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(126,34,206,0.5)] cursor-pointer hover:scale-105"
+                            >
+                                <Icon name="shuffle" size={16} />
+                                Sortear Ordem
+                            </button>
+                            {/* Botão circular perfeitamente centrado */}
+                            <button 
+                                onClick={() => setIsSettingsOpen(true)}
+                                className="w-10 h-10 flex items-center justify-center bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 rounded-full transition-all shadow-[0_0_15px_rgba(0,0,0,0.2)] cursor-pointer hover:scale-105 border border-zinc-700 backdrop-blur-sm"
+                                title="Configurações do Sorteio"
+                            >
+                                <Icon name="settings" size={16} />
+                            </button>
+                        </div>
 
                     </header>
 
+                    {}
                     {/* Alerta de erro */}
                     {warning && (
                         <div className="max-w-md mx-auto mb-6 bg-red-950/80 border border-red-500/50 text-red-200 px-4 py-2 rounded-lg text-center text-sm font-medium animate-pulse backdrop-blur-sm z-20 relative">
@@ -450,12 +534,15 @@
                         </div>
                     )}
 
-                    {}
                     <div className="max-w-[1400px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 relative z-10">
                         
-                        {/* Coluna de MCs Disponíveis */}
+                        {/* Coluna de MCs Disponíveis (LIQUID GLASS + 3D MOUSE) */}
                         <div className="lg:col-span-4 flex flex-col h-auto lg:h-[calc(100vh-280px)]">
-                            <div className="bg-zinc-900/90 border border-zinc-800 rounded-2xl flex flex-col h-full shadow-2xl overflow-hidden backdrop-blur-md">
+                            <div 
+                                className="trio-tilt-card bg-zinc-900/80 backdrop-blur-xl backdrop-saturate-150 border border-white/10 rounded-2xl flex flex-col h-full shadow-[0_8px_32px_rgba(0,0,0,0.3)] overflow-hidden"
+                                onMouseMove={handleCardMouseMove}
+                                onMouseLeave={handleCardMouseLeave}
+                            >
                                 <div className="p-4 bg-black/40 border-b border-zinc-800 flex items-center justify-between">
                                     <h2 className="text-sm font-bold flex items-center gap-2 text-zinc-100 uppercase tracking-wider">
                                         <Icon name="users" size={16} className="text-red-500" />
@@ -485,7 +572,6 @@
                                     </form>
                                 </div>
 
-                                {}
                                 <div 
                                     className={`flex-1 p-4 overflow-y-auto content-start flex flex-wrap gap-2 transition-colors ${
                                         draggingOverId === 'available' ? 'bg-zinc-800/80 ring-2 ring-inset ring-red-500/50' : ''
@@ -524,8 +610,7 @@
                             </div>
                         </div>
 
-                        {}
-                        {/* Colunas dos Trios */}
+                        {/* Colunas dos Trios (LIQUID GLASS MANTIDO) */}
                         <div className="lg:col-span-8">
                             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 h-full content-start pb-10">
                                 {Object.keys(trios).map((trioIndex) => {
@@ -534,9 +619,9 @@
                                     const count = trioMCs.length;
                                     const isOver = draggingOverId === numIndex;
 
-                                    let borderColor = 'border-transparent bg-zinc-900/60 border-dashed';
-                                    if (count > 0 && count < 3) borderColor = 'border-yellow-500/80 bg-zinc-900/80 border-solid shadow-[0_0_20px_rgba(234,179,8,0.15)]';
-                                    if (count === 3) borderColor = 'border-green-500/80 bg-zinc-900/95 border-solid shadow-[0_0_20px_rgba(34,197,94,0.15)]';
+                                    let borderColor = 'border-transparent bg-zinc-900/80 border-dashed';
+                                    if (count > 0 && count < 3) borderColor = 'border-yellow-500/50 bg-zinc-900/80 border-solid shadow-[0_0_20px_rgba(234,179,8,0.25)]';
+                                    if (count === 3) borderColor = 'border-green-500/50 bg-zinc-900/50 border-solid shadow-[0_0_20px_rgba(34,197,94,0.25)]';
 
                                     return (
                                         <div
@@ -546,7 +631,7 @@
                                             onDrop={(e) => handleDrop(e, numIndex)}
                                             onMouseMove={handleCardMouseMove}
                                             onMouseLeave={handleCardMouseLeave}
-                                            className={`trio-tilt-card relative flex flex-col rounded-2xl border-2 backdrop-blur-sm ${borderColor} ${
+                                            className={`trio-tilt-card relative flex flex-col rounded-2xl border-2 backdrop-blur-xl backdrop-saturate-150 shadow-[0_8px_32px_rgba(0,0,0,0.2)] ${borderColor} ${
                                                 isOver ? 'ring-2 ring-yellow-400 scale-[1.02] bg-zinc-800' : ''
                                             }`}
                                         >
@@ -568,7 +653,6 @@
                                                 </div>
                                             </div>
 
-                                            {}
                                             <div className="p-2 flex-1 flex flex-col gap-2 min-h-[160px]">
                                                 {trioMCs.map((mc, index) => {
                                                     const isCaptain = index === 0;
@@ -630,7 +714,6 @@
                                     );
                                 })}
 
-                                {}
                                 {/* Botão para Adicionar Novo Trio */}
                                 <button 
                                     onClick={handleAddTrio}
@@ -650,12 +733,10 @@
                     </div>
 
                     {}
-                    {/* Modais */}
-                    
                     {/* Modal Capitão */}
                     {confirmDialog.isOpen && (
                         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-md">
-                            <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-sm w-full shadow-2xl relative text-center border-t-4 border-t-yellow-500">
+                            <div className="animate-modal-pop bg-zinc-900/80 backdrop-blur-xl backdrop-saturate-150 border border-white/10 p-6 rounded-2xl max-w-sm w-full shadow-[0_8px_32px_rgba(0,0,0,0.4)] relative text-center border-t-4 border-t-yellow-500">
                                 <div className="w-16 h-16 bg-yellow-500/15 rounded-full flex items-center justify-center border border-yellow-500/20 text-yellow-500 mx-auto mb-4 mt-2">
                                     <Icon name="alert-triangle" size={32} />
                                 </div>
@@ -673,7 +754,7 @@
                     {/* Modal Remover Trio */}
                     {confirmTrioRemoval.isOpen && (
                         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-md">
-                            <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-sm w-full shadow-2xl relative text-center border-t-4 border-t-red-600">
+                            <div className="animate-modal-pop bg-zinc-900/80 backdrop-blur-xl backdrop-saturate-150 border border-white/10 p-6 rounded-2xl max-w-sm w-full shadow-[0_8px_32px_rgba(0,0,0,0.4)] relative text-center border-t-4 border-t-red-600">
                                 <div className="w-16 h-16 bg-red-500/15 rounded-full flex items-center justify-center border border-red-500/20 text-red-500 mx-auto mb-4 mt-2">
                                     <Icon name="trash-2" size={32} />
                                 </div>
@@ -688,10 +769,10 @@
                         </div>
                     )}
 
-                    {/* Modal Sorteio (Contagem Regressiva) - Fundo translucido e desfoque mantidos  */}
+                    {/* Modal Sorteio (Contagem Regressiva) - Animado */}
                     {isShuffling && (
                         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-md">
-                            <div className="text-center flex flex-col items-center">
+                            <div className="animate-modal-pop text-center flex flex-col items-center">
                                 <Icon name="shuffle" size={48} className="text-purple-500 mb-6 animate-pulse" />
                                 <h2 className="text-xl md:text-3xl font-black uppercase tracking-[0.3em] text-zinc-100 mb-8 animate-pulse">Sorteando a Ordem</h2>
                                 <div className="text-[150px] leading-none font-black text-transparent bg-clip-text bg-gradient-to-b from-purple-400 to-purple-800">
@@ -701,10 +782,68 @@
                         </div>
                     )}
 
-                    {/* Modal Como Usar */}
+                    {/* Modal Configurações do Sorteio */}
+                    {isSettingsOpen && (
+                        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/40 backdrop-blur-md">
+                            <div 
+                                className="trio-tilt-card animate-modal-pop bg-zinc-900/80 backdrop-blur-xl backdrop-saturate-150 border border-white/10 p-6 md:p-8 rounded-2xl max-w-sm w-full shadow-[0_8px_32px_rgba(0,0,0,0.4)] relative"
+                                onMouseMove={handleCardMouseMove}
+                                onMouseLeave={handleCardMouseLeave}
+                            >
+                                <button 
+                                    onClick={() => setIsSettingsOpen(false)}
+                                    className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer p-1"
+                                >
+                                    <Icon name="x" size={20} />
+                                </button>
+                                
+                                <div className="flex items-center gap-3 mb-6">
+                                    <div className="w-12 h-12 bg-zinc-500/15 rounded-full flex items-center justify-center border border-zinc-500/20 text-zinc-300">
+                                        <Icon name="settings" size={24} />
+                                    </div>
+                                    <h2 className="text-lg font-black uppercase tracking-wider text-zinc-100">Sorteio</h2>
+                                </div>
+                                
+                                <div className="space-y-6 text-xs md:text-sm text-zinc-400">
+                                    <div className="flex flex-col gap-2">
+                                        <label className="font-bold text-zinc-200 uppercase tracking-wider text-[10px]">Segundos da Contagem: <span className="text-purple-400 text-xs">{configCountdown}s</span></label>
+                                        <input 
+                                            type="range" min="1" max="15" step="1" 
+                                            value={configCountdown} 
+                                            onChange={(e) => setConfigCountdown(Number(e.target.value))} 
+                                            className="w-full accent-purple-500 cursor-pointer" 
+                                        />
+                                    </div>
+
+                                    <div className="flex flex-col gap-2">
+                                        <label className="font-bold text-zinc-200 uppercase tracking-wider text-[10px]">Mudanças antes de fixar: <span className="text-purple-400 text-xs">{configShuffleSteps}x</span></label>
+                                        <input 
+                                            type="range" min="1" max="10" step="1" 
+                                            value={configShuffleSteps} 
+                                            onChange={(e) => setConfigShuffleSteps(Number(e.target.value))} 
+                                            className="w-full accent-purple-500 cursor-pointer" 
+                                        />
+                                    </div>
+                                </div>
+                                
+                                <button 
+                                    onClick={() => setIsSettingsOpen(false)} 
+                                    className="w-full mt-8 py-3 bg-purple-700 hover:bg-purple-600 text-white text-xs font-bold uppercase rounded-lg cursor-pointer transition-colors shadow-[0_0_15px_rgba(126,34,206,0.3)]"
+                                >
+                                    Salvar e Fechar
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Modal Como Usar - AGORA COM LIQUID GLASS E EFEITO 3D DO MOUSE */}
                     {isHelpOpen && (
                         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/40 backdrop-blur-md">
-                            <div className="bg-zinc-900 border border-zinc-800 p-6 md:p-8 rounded-2xl max-w-xl w-full shadow-2xl relative">
+                            <div 
+                                className="trio-tilt-card animate-modal-pop bg-zinc-900/80 backdrop-blur-xl backdrop-saturate-150 border border-white/10 p-6 md:p-8 rounded-2xl max-w-xl w-full shadow-[0_8px_32px_rgba(0,0,0,0.4)] relative"
+                                onMouseMove={handleCardMouseMove}
+                                onMouseLeave={handleCardMouseLeave}
+                            >
                                 <button 
                                     onClick={() => setIsHelpOpen(false)}
                                     className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer p-1"
