@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=0.6">
     <title>Batalha da Torre - Draft Oficial</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -15,15 +15,32 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <!-- Google Fonts: Unbounded -->
     <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+    
     <style>
         .font-unbounded { font-family: 'Unbounded', sans-serif; }
+        
+        /* Grid de Fundo */
+        body {
+            background-color: #09090b; /* zinc-950 */
+            background-image: 
+                linear-gradient(rgba(220, 38, 38, 0.08) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(220, 38, 38, 0.08) 1px, transparent 1px);
+            background-size: 60px 60px;
+            background-position: center center;
+        }
+
+        /* Ocultar scrollbar dos trios mas permitir rolagem */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #52525b; }
     </style>
 </head>
-<body class="bg-zinc-950 text-zinc-100 font-unbounded selection:bg-red-500/30 overflow-x-hidden">
+<body class="text-zinc-100 font-unbounded selection:bg-red-500/30 overflow-x-hidden">
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useMemo, useEffect } = React;
+        const { useState, useMemo, useEffect, useRef } = React;
         
         // Ícones via Lucide globais
         const Icon = ({ name, size = 16, className = "" }) => {
@@ -34,6 +51,7 @@
         };
 
         function App() {
+            // Estados do Sistema de Batalha
             const [newMcName, setNewMcName] = useState('');
             const [warning, setWarning] = useState('');
             const [availableMCs, setAvailableMCs] = useState([]);
@@ -44,17 +62,33 @@
             const [draggedMcId, setDraggedMcId] = useState(null);
             const [draggedSourceId, setDraggedSourceId] = useState(null);
 
-            const [isAdminOpen, setIsAdminOpen] = useState(false);
-            const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
-            const [adminPassword, setAdminPassword] = useState('');
-            const [adminLoginError, setAdminLoginError] = useState('');
-
+            // Estados de Confirmação (Modais)
             const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, mc: null, trioId: null });
             const [confirmTrioRemoval, setConfirmTrioRemoval] = useState({ isOpen: false, trioId: null });
+
+            // Estados de Customização Visual (Header)
+            const [titleText, setTitleText] = useState('Batalha da Torre');
+            const [titleColor, setTitleColor] = useState('#ef4444'); // Vermelho padrão
+            const [subtitleText, setSubtitleText] = useState('Draft Oficial de Trios');
+            const [subtitleColor, setSubtitleColor] = useState('#a1a1aa'); // Zinco padrão
+            const [logoImg, setLogoImg] = useState(null);
+            const [logoZoom, setLogoZoom] = useState(1);
 
             const sortedAvailableMCs = useMemo(() => {
                 return [...availableMCs].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
             }, [availableMCs]);
+
+            const handleImageUpload = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        setLogoImg(reader.result);
+                        setLogoZoom(1); // Reseta o zoom ao upar nova imagem
+                    };
+                    reader.readAsDataURL(file);
+                }
+            };
 
             const handleAddMc = (e) => {
                 e.preventDefault();
@@ -65,21 +99,12 @@
                 setWarning('');
             };
 
-            const handleAdminLogin = (e) => {
-                e.preventDefault();
-                if (adminPassword === 'torre2026') {
-                    setIsAdminLoggedIn(true);
-                    setAdminLoginError('');
-                    setAdminPassword('');
-                } else {
-                    setAdminLoginError('Senha incorreta!');
-                }
-            };
-
             const handleDragStart = (e, mc, sourceId) => {
                 setDraggedMcId(mc.id);
                 setDraggedSourceId(sourceId);
+                // Elemento visual arrastável
                 e.dataTransfer.setData('text/plain', mc.id);
+                e.dataTransfer.effectAllowed = 'move';
             };
 
             const handleDragOver = (e, targetId) => {
@@ -118,12 +143,14 @@
                     return;
                 }
 
+                // Remove do local de origem
                 if (sourceId === 'available') {
                     setAvailableMCs(prev => prev.filter(mc => mc.id !== mcId));
                 } else {
                     setTrios(prev => ({ ...prev, [sourceId]: prev[sourceId].filter(mc => mc.id !== mcId) }));
                 }
 
+                // Adiciona no novo local
                 if (targetId === 'available') {
                     setAvailableMCs(prev => [...prev, mcToMove]);
                 } else {
@@ -136,6 +163,7 @@
 
             const requestRemoval = (mc, trioId, indexInTrio) => {
                 setWarning('');
+                // Se for o Capitão (índice 0), pede confirmação
                 if (indexInTrio === 0) {
                     setConfirmDialog({ isOpen: true, mc, trioId });
                 } else {
@@ -175,93 +203,150 @@
             useEffect(() => {
                 const handleBeforeUnload = (e) => {
                     e.preventDefault();
-                    // O navegador exige o returnValue para exibir o alerta padrão
                     e.returnValue = ''; 
                 };
-                
                 window.addEventListener('beforeunload', handleBeforeUnload);
-                
                 return () => {
                     window.removeEventListener('beforeunload', handleBeforeUnload);
                 };
             }, []);
 
-            useEffect(() => {
-                lucide.createIcons();
-            });
-
             return (
-                <div className="min-h-screen bg-zinc-950 text-zinc-100 p-4 md:p-6">
-                    {/* Header */}
-                    <header className="mb-8 text-center flex flex-col items-center justify-center space-y-2 relative">
-                        <button 
-                            onClick={() => setIsAdminOpen(true)}
-                            className="absolute right-0 top-0 bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-zinc-200 px-3 py-2 rounded-xl text-xs flex items-center gap-2 transition-colors shadow-lg cursor-pointer"
-                        >
-                            <Icon name="shield" size={14} className="text-red-500" />
-                            <span className="hidden sm:inline">Painel Admin</span>
-                        </button>
-
-                        <div className="inline-flex items-center justify-center p-3 bg-red-600 rounded-full mb-1 shadow-[0_0_20px_rgba(220,38,38,0.5)]">
-                            <Icon name="swords" size={28} className="text-zinc-50" />
+                <div className="min-h-screen text-zinc-100 p-4 md:p-6 pb-20">
+                    {/* Cabeçalho Editável */}
+                    <header className="mb-10 text-center flex flex-col items-center justify-center space-y-3 relative z-10 mt-4">
+                        
+                        {/* Seção da Logo */}
+                        <div className="relative flex flex-col items-center group">
+                            <input type="file" id="logoUpload" className="hidden" accept="image/*" onChange={handleImageUpload} />
+                            
+                            <label htmlFor="logoUpload" title="Clique para alterar a logo" className="relative inline-flex items-center justify-center w-24 h-24 bg-red-600 rounded-full mb-1 shadow-[0_0_20px_rgba(220,38,38,0.5)] cursor-pointer overflow-hidden border-2 border-transparent hover:border-white transition-all">
+                                {logoImg ? (
+                                    <img 
+                                        src={logoImg} 
+                                        alt="Logo Editada" 
+                                        style={{ 
+                                            transform: `scale(${logoZoom})`, 
+                                            objectFit: 'cover', 
+                                            width: '100%', 
+                                            height: '100%' 
+                                        }} 
+                                    />
+                                ) : (
+                                    <Icon name="swords" size={40} className="text-zinc-50" />
+                                )}
+                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                    <Icon name="camera" size={24} className="text-white" />
+                                </div>
+                            </label>
+                            
+                            {/* Controle de Zoom da Logo */}
+                            {logoImg && (
+                                <div className="absolute -right-8 top-1/2 -translate-y-1/2 translate-x-full flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity bg-zinc-900/90 p-2 rounded-lg border border-zinc-700 backdrop-blur-sm">
+                                    <Icon name="zoom-out" size={14} className="text-zinc-400" />
+                                    <input 
+                                        type="range" min="0.5" max="3" step="0.05" 
+                                        value={logoZoom} 
+                                        onChange={(e) => setLogoZoom(e.target.value)} 
+                                        className="w-20 accent-red-500 cursor-pointer" 
+                                    />
+                                    <Icon name="zoom-in" size={14} className="text-zinc-400" />
+                                </div>
+                            )}
                         </div>
-                        <h1 className="text-3xl md:text-4xl font-black uppercase tracking-widest bg-gradient-to-r from-red-500 via-yellow-500 to-red-500 text-transparent bg-clip-text">
-                            Batalha da Torre
-                        </h1>
-                        <p className="text-zinc-400 text-sm font-medium tracking-wide">Draft Oficial de Trios</p>
+
+                        {/* Título Editável */}
+                        <div className="relative group flex items-center justify-center w-full max-w-2xl">
+                            <input 
+                                type="text"
+                                value={titleText}
+                                onChange={(e) => setTitleText(e.target.value)}
+                                style={{ color: titleColor }}
+                                className="text-3xl md:text-5xl font-black uppercase tracking-widest bg-transparent border-b border-transparent focus:border-red-500/50 outline-none text-center w-full transition-colors pb-1"
+                            />
+                            <div className="absolute right-0 translate-x-[120%] opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center">
+                                <label className="text-[9px] text-zinc-500 mb-1">Cor</label>
+                                <input 
+                                    type="color" 
+                                    value={titleColor} 
+                                    onChange={(e) => setTitleColor(e.target.value)}
+                                    className="w-8 h-8 rounded cursor-pointer bg-zinc-900 border border-zinc-700 p-0 overflow-hidden" 
+                                />
+                            </div>
+                        </div>
+
+                        {/* Subtítulo Editável */}
+                        <div className="relative group flex items-center justify-center w-full max-w-md">
+                            <input 
+                                type="text"
+                                value={subtitleText}
+                                onChange={(e) => setSubtitleText(e.target.value)}
+                                style={{ color: subtitleColor }}
+                                className="text-sm font-medium tracking-wide bg-transparent border-b border-transparent focus:border-zinc-500 outline-none text-center w-full transition-colors pb-1"
+                            />
+                            <div className="absolute right-0 translate-x-[120%] opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center">
+                                <input 
+                                    type="color" 
+                                    value={subtitleColor} 
+                                    onChange={(e) => setSubtitleColor(e.target.value)}
+                                    className="w-5 h-5 rounded cursor-pointer bg-zinc-900 border border-zinc-700 p-0 overflow-hidden" 
+                                />
+                            </div>
+                        </div>
                     </header>
 
+                    {/* Alerta de erro */}
                     {warning && (
-                        <div className="max-w-md mx-auto mb-6 bg-red-950/50 border border-red-500/50 text-red-200 px-4 py-2 rounded-lg text-center text-sm font-medium animate-pulse">
+                        <div className="max-w-md mx-auto mb-6 bg-red-950/80 border border-red-500/50 text-red-200 px-4 py-2 rounded-lg text-center text-sm font-medium animate-pulse backdrop-blur-sm z-20 relative">
                             {warning}
                         </div>
                     )}
 
-                    <div className="max-w-[1400px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
-                        {/* Lista Disponíveis */}
-                        <div className="lg:col-span-4 flex flex-col h-auto lg:h-[calc(100vh-180px)]">
-                            <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl flex flex-col h-full shadow-2xl overflow-hidden backdrop-blur-sm">
-                                <div className="p-3 bg-zinc-900 border-b border-zinc-800 flex items-center justify-between">
-                                    <h2 className="text-sm font-bold flex items-center gap-2 text-zinc-100">
+                    <div className="max-w-[1400px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 relative z-10">
+                        {}
+                        <div className="lg:col-span-4 flex flex-col h-auto lg:h-[calc(100vh-280px)]">
+                            <div className="bg-zinc-900/90 border border-zinc-800 rounded-2xl flex flex-col h-full shadow-2xl overflow-hidden backdrop-blur-md">
+                                <div className="p-4 bg-black/40 border-b border-zinc-800 flex items-center justify-between">
+                                    <h2 className="text-sm font-bold flex items-center gap-2 text-zinc-100 uppercase tracking-wider">
                                         <Icon name="users" size={16} className="text-red-500" />
-                                        MCs Disponíveis
+                                        Lista de MCs
                                     </h2>
-                                    <span className="bg-zinc-800 text-xs font-bold px-2 py-1 rounded-md text-zinc-400">
+                                    <span className="bg-red-600/20 border border-red-500/30 text-red-400 text-xs font-bold px-2.5 py-1 rounded-md">
                                         {sortedAvailableMCs.length}
                                     </span>
                                 </div>
 
-                                <div className="p-3 bg-zinc-800/30 border-b border-zinc-800">
+                                <div className="p-3 bg-zinc-900/50 border-b border-zinc-800">
                                     <form onSubmit={handleAddMc} className="flex gap-2">
                                         <input
                                             type="text"
-                                            placeholder="Nome do MC..."
+                                            placeholder="Adicionar novo MC..."
                                             value={newMcName}
                                             onChange={(e) => setNewMcName(e.target.value)}
-                                            className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-red-500 text-zinc-100"
+                                            className="w-full bg-black/50 border border-zinc-700 rounded-lg px-3 py-2.5 text-xs font-semibold focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 text-zinc-100 transition-all placeholder:text-zinc-600"
                                         />
                                         <button 
                                             type="submit"
                                             disabled={!newMcName.trim()}
-                                            className="bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white p-2 rounded-lg transition-colors cursor-pointer"
+                                            className="bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg transition-colors cursor-pointer shadow-lg shadow-red-600/20"
                                         >
-                                            <Icon name="plus" size={16} />
+                                            <Icon name="plus" size={18} />
                                         </button>
                                     </form>
                                 </div>
 
                                 <div 
-                                    className={`flex-1 p-3 overflow-y-auto content-start flex flex-wrap gap-1.5 transition-colors ${
-                                        draggingOverId === 'available' ? 'bg-zinc-800/50 ring-2 ring-inset ring-red-500/50' : ''
+                                    className={`flex-1 p-4 overflow-y-auto content-start flex flex-wrap gap-2 transition-colors ${
+                                        draggingOverId === 'available' ? 'bg-zinc-800/80 ring-2 ring-inset ring-red-500/50' : ''
                                     }`}
                                     onDragOver={(e) => handleDragOver(e, 'available')}
                                     onDragLeave={handleDragLeave}
                                     onDrop={(e) => handleDrop(e, 'available')}
                                 >
                                     {sortedAvailableMCs.length === 0 ? (
-                                        <div className="w-full h-32 flex flex-col items-center justify-center text-zinc-600 space-y-2">
-                                            <Icon name="mic-2" size={24} />
-                                            <p className="text-xs text-center">Nenhum MC na lista.</p>
+                                        <div className="w-full h-40 flex flex-col items-center justify-center text-zinc-600 space-y-3 opacity-50">
+                                            <Icon name="mic-2" size={32} />
+                                            <p className="text-xs font-medium text-center uppercase tracking-widest">Lista Vazia</p>
                                         </div>
                                     ) : (
                                         sortedAvailableMCs.map((mc) => (
@@ -269,10 +354,10 @@
                                                 key={mc.id}
                                                 draggable
                                                 onDragStart={(e) => handleDragStart(e, mc, 'available')}
-                                                className="flex items-center gap-1 px-2.5 py-1 bg-zinc-800 border border-zinc-700 rounded-full cursor-grab active:cursor-grabbing hover:border-red-500 transition-colors shadow-sm"
+                                                className="group flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800/80 border border-zinc-700/80 rounded-full cursor-grab active:cursor-grabbing hover:border-red-500 hover:bg-zinc-800 hover:shadow-[0_0_10px_rgba(239,68,68,0.2)] transition-all"
                                             >
-                                                <Icon name="mic-2" size={10} className="text-zinc-400" />
-                                                <span className="font-semibold text-[10px] text-zinc-200 uppercase whitespace-nowrap">{mc.name}</span>
+                                                <Icon name="mic-2" size={10} className="text-zinc-500 group-hover:text-red-400 transition-colors" />
+                                                <span className="font-bold text-[10px] md:text-xs text-zinc-200 uppercase whitespace-nowrap tracking-wide">{mc.name}</span>
                                             </div>
                                         ))
                                     )}
@@ -280,18 +365,19 @@
                             </div>
                         </div>
 
-                        {/* Trios */}
+                        {}
                         <div className="lg:col-span-8">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 h-full content-start">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 h-full content-start pb-10">
                                 {Object.keys(trios).map((trioIndex) => {
                                     const numIndex = parseInt(trioIndex);
                                     const trioMCs = trios[numIndex];
                                     const count = trioMCs.length;
                                     const isOver = draggingOverId === numIndex;
 
-                                    let borderColor = 'border-transparent bg-zinc-900/40 border-dashed';
-                                    if (count > 0 && count < 3) borderColor = 'border-yellow-500/80 bg-zinc-900/60 border-solid shadow-[0_0_15px_rgba(234,179,8,0.15)]';
-                                    if (count === 3) borderColor = 'border-green-500/80 bg-zinc-900/80 border-solid shadow-[0_0_15px_rgba(34,197,94,0.15)]';
+                                    // Lógica de cores das bordas do trio
+                                    let borderColor = 'border-transparent bg-zinc-900/60 border-dashed';
+                                    if (count > 0 && count < 3) borderColor = 'border-yellow-500/80 bg-zinc-900/80 border-solid shadow-[0_0_20px_rgba(234,179,8,0.15)]';
+                                    if (count === 3) borderColor = 'border-green-500/80 bg-zinc-900/95 border-solid shadow-[0_0_20px_rgba(34,197,94,0.15)]';
 
                                     return (
                                         <div
@@ -299,21 +385,21 @@
                                             onDragOver={(e) => handleDragOver(e, numIndex)}
                                             onDragLeave={handleDragLeave}
                                             onDrop={(e) => handleDrop(e, numIndex)}
-                                            className={`relative flex flex-col rounded-2xl border-2 transition-all duration-300 ${borderColor} ${
-                                                isOver ? 'ring-2 ring-yellow-400 scale-[1.02]' : ''
+                                            className={`relative flex flex-col rounded-2xl border-2 transition-all duration-200 backdrop-blur-sm ${borderColor} ${
+                                                isOver ? 'ring-2 ring-yellow-400 scale-[1.02] bg-zinc-800' : ''
                                             }`}
                                         >
-                                            <div className="p-3 border-b border-zinc-800/50 flex justify-between items-center">
-                                                <h3 className="font-black text-sm text-zinc-100">Trio {numIndex + 1}</h3>
+                                            <div className="p-3 border-b border-white/5 flex justify-between items-center bg-black/20 rounded-t-xl">
+                                                <h3 className="font-black text-sm text-zinc-100 tracking-wider">Trio {numIndex + 1}</h3>
                                                 <div className="flex items-center gap-2">
-                                                    <span className={`text-[10px] font-bold px-2 py-1 rounded-md ${
-                                                        count === 3 ? 'bg-green-500/20 text-green-400' : 'bg-zinc-800 text-zinc-400'
+                                                    <span className={`text-[10px] font-black px-2 py-1 rounded-md ${
+                                                        count === 3 ? 'bg-green-500/20 text-green-400' : 'bg-black/40 text-zinc-400 border border-white/5'
                                                     }`}>
                                                         {count}/3
                                                     </span>
                                                     <button 
                                                         onClick={() => setConfirmTrioRemoval({ isOpen: true, trioId: trioIndex })}
-                                                        className="p-1 rounded-md text-zinc-500 hover:text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer"
+                                                        className="p-1.5 rounded-md text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
                                                         title="Remover Trio"
                                                     >
                                                         <Icon name="x" size={14} />
@@ -321,7 +407,7 @@
                                                 </div>
                                             </div>
 
-                                            <div className="p-2 flex-1 flex flex-col gap-2">
+                                            <div className="p-2 flex-1 flex flex-col gap-2 min-h-[160px]">
                                                 {trioMCs.map((mc, index) => {
                                                     const isCaptain = index === 0;
                                                     return (
@@ -331,20 +417,20 @@
                                                             onDragStart={(e) => handleDragStart(e, mc, trioIndex)}
                                                             onClick={() => requestRemoval(mc, numIndex, index)}
                                                             title="Clique para remover"
-                                                            className={`group relative overflow-hidden flex items-center p-2 rounded-lg cursor-pointer transition-all shadow-md ${
+                                                            className={`group relative overflow-hidden flex items-center p-2.5 h-[46px] rounded-lg cursor-pointer transition-all ${
                                                                 isCaptain 
-                                                                    ? 'bg-gradient-to-r from-yellow-600/20 to-zinc-800/80 border border-yellow-500/50 shadow-[0_0_10px_rgba(234,179,8,0.3)] hover:border-red-500' 
-                                                                    : 'bg-zinc-800/80 border border-zinc-700 hover:border-red-500 hover:bg-red-950/30'
+                                                                    ? 'bg-gradient-to-r from-yellow-600/20 to-zinc-900 border border-yellow-500/50 shadow-[0_0_10px_rgba(234,179,8,0.2)] hover:border-red-500 hover:from-red-900/30' 
+                                                                    : 'bg-black/40 border border-zinc-700/50 hover:border-red-500 hover:bg-red-950/30'
                                                             }`}
                                                         >
-                                                            <div className="flex-1 flex items-center gap-2 relative z-10">
-                                                                <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
-                                                                    isCaptain ? 'bg-yellow-500/20 text-yellow-500' : 'bg-zinc-900 border border-zinc-700 text-zinc-400'
+                                                            <div className="flex-1 flex items-center gap-2.5 relative z-10 w-full overflow-hidden">
+                                                                <div className={`w-6 h-6 shrink-0 rounded-full flex items-center justify-center ${
+                                                                    isCaptain ? 'bg-yellow-500/20 text-yellow-500' : 'bg-zinc-800 text-zinc-400'
                                                                 }`}>
                                                                     <Icon name={isCaptain ? "crown" : "mic-2"} size={12} />
                                                                 </div>
-                                                                <span className={`text-xs font-bold uppercase truncate ${
-                                                                    isCaptain ? 'text-yellow-400' : 'text-zinc-200'
+                                                                <span className={`text-xs font-black uppercase truncate tracking-wide ${
+                                                                    isCaptain ? 'text-yellow-400 drop-shadow-[0_0_5px_rgba(234,179,8,0.3)]' : 'text-zinc-200'
                                                                 }`}>
                                                                     {mc.name}
                                                                 </span>
@@ -356,21 +442,22 @@
                                                     );
                                                 })}
 
+                                                {/* Espaços Vazios Fixos (Sempre mantém o tamanho de 46px) */}
                                                 {Array.from({ length: Math.max(0, 3 - count) }).map((_, i) => {
                                                     const isCaptainSlot = count === 0 && i === 0;
                                                     return (
                                                         <div 
                                                             key={`empty-${i}`} 
-                                                            className={`w-full h-[46px] shrink-0 border border-dashed rounded-lg flex flex-col items-center justify-center ${
+                                                            className={`w-full h-[46px] shrink-0 border border-dashed rounded-lg flex flex-col items-center justify-center transition-colors ${
                                                                 isCaptainSlot 
                                                                     ? 'border-yellow-500/40 bg-yellow-500/5 shadow-[0_0_15px_rgba(234,179,8,0.1)_inset]' 
-                                                                    : 'border-zinc-700/50 bg-zinc-900/30'
+                                                                    : 'border-zinc-700/50 bg-black/20'
                                                             }`}
                                                         >
-                                                            <span className={`text-[9px] font-bold uppercase tracking-widest ${
+                                                            <span className={`text-[9px] font-black uppercase tracking-[0.2em] ${
                                                                 isCaptainSlot ? 'text-yellow-600/70' : 'text-zinc-600'
                                                             }`}>
-                                                                {isCaptainSlot ? 'Espaço Capitão(ã)' : 'Espaço Vazio'}
+                                                                {isCaptainSlot ? 'Espaço Capitão' : 'Espaço Vazio'}
                                                             </span>
                                                         </div>
                                                     );
@@ -380,14 +467,15 @@
                                     );
                                 })}
 
+                                {/* Botão para Adicionar Novo Trio */}
                                 <button 
                                     onClick={handleAddTrio}
-                                    className="relative flex flex-col rounded-2xl border-2 border-dashed border-zinc-700/50 bg-zinc-900/30 hover:bg-zinc-800/50 hover:border-zinc-600 transition-all min-h-[220px] items-center justify-center group cursor-pointer"
+                                    className="relative flex flex-col rounded-2xl border-2 border-dashed border-zinc-700/50 bg-black/20 hover:bg-zinc-800/50 hover:border-zinc-600 transition-all min-h-[220px] items-center justify-center group cursor-pointer backdrop-blur-sm"
                                 >
-                                    <div className="w-16 h-16 rounded-full bg-zinc-800/80 flex items-center justify-center group-hover:bg-zinc-700 transition-colors">
-                                        <Icon name="plus" size={32} className="text-zinc-500 group-hover:text-zinc-300" />
+                                    <div className="w-16 h-16 rounded-full bg-zinc-800/80 flex items-center justify-center group-hover:bg-zinc-700 group-hover:scale-110 transition-all shadow-lg">
+                                        <Icon name="plus" size={32} className="text-zinc-500 group-hover:text-zinc-300 transition-colors" />
                                     </div>
-                                    <span className="text-zinc-500 font-bold mt-4 uppercase tracking-widest text-xs group-hover:text-zinc-300">
+                                    <span className="text-zinc-500 font-bold mt-4 uppercase tracking-[0.2em] text-[10px] group-hover:text-zinc-300 transition-colors">
                                         Adicionar Trio
                                     </span>
                                 </button>
@@ -395,107 +483,39 @@
                         </div>
                     </div>
 
-                    {/* Modal Admin */}
-                    {isAdminOpen && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-                            <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-md w-full shadow-2xl relative">
-                                <button onClick={() => { setIsAdminOpen(false); setAdminLoginError(''); }} className="absolute top-4 right-4 text-zinc-400 hover:text-white cursor-pointer">
-                                    <Icon name="x" size={20} />
-                                </button>
-
-                                {!isAdminLoggedIn ? (
-                                    <form onSubmit={handleAdminLogin} className="flex flex-col items-center space-y-4 pt-2">
-                                        <div className="w-14 h-14 bg-red-600/15 rounded-full flex items-center justify-center border border-red-500/20 text-red-500 mb-1">
-                                            <Icon name="lock" size={24} />
-                                        </div>
-                                        <h2 className="text-lg font-bold text-zinc-100">Área Restrita</h2>
-                                        <p className="text-xs text-zinc-400 text-center">Digite a senha de administrador (padrão: <code>torre2026</code>).</p>
-
-                                        <input 
-                                            type="password"
-                                            placeholder="Senha..."
-                                            value={adminPassword}
-                                            onChange={(e) => setAdminPassword(e.target.value)}
-                                            className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-red-500 text-zinc-100"
-                                        />
-
-                                        {adminLoginError && <span className="text-xs text-red-500">{adminLoginError}</span>}
-
-                                        <button type="submit" className="w-full py-3 bg-red-600 hover:bg-red-500 text-white text-xs font-bold uppercase rounded-lg transition-colors cursor-pointer">
-                                            Entrar
-                                        </button>
-                                    </form>
-                                ) : (
-                                    <div className="flex flex-col space-y-4 pt-2">
-                                        <div className="flex items-center gap-3 border-b border-zinc-800 pb-3">
-                                            <div className="w-10 h-10 bg-green-500/15 rounded-full flex items-center justify-center text-green-500">
-                                                <Icon name="unlock" size={20} />
-                                            </div>
-                                            <div>
-                                                <h2 className="text-sm font-bold text-zinc-100">Painel do Organizador</h2>
-                                                <p className="text-[10px] text-green-400">Acesso autorizado</p>
-                                            </div>
-                                        </div>
-
-                                        <div className="bg-zinc-950 border border-zinc-800 p-3 rounded-xl flex items-center justify-between">
-                                            <div>
-                                                <p className="text-xs font-bold text-zinc-200">Limpar todos os Trios</p>
-                                                <p className="text-[10px] text-zinc-500">Retorna todos os MCs para a lista geral</p>
-                                            </div>
-                                            <button 
-                                                onClick={() => {
-                                                    let allMcs = [...availableMCs];
-                                                    Object.values(trios).forEach(t => allMcs.push(...t));
-                                                    setAvailableMCs(allMcs);
-                                                    setTrios({ 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [] });
-                                                    setIsAdminOpen(false);
-                                                }}
-                                                className="bg-zinc-800 hover:bg-red-600/20 text-zinc-300 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer"
-                                            >
-                                                Resetar
-                                            </button>
-                                        </div>
-
-                                        <button onClick={() => setIsAdminLoggedIn(false)} className="w-full mt-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold uppercase rounded-lg cursor-pointer">
-                                            Sair do Painel
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Modal Confirmação Capitão */}
+                    {}
+                    
+                    {/* Modal Capitão */}
                     {confirmDialog.isOpen && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-                            <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-sm w-full shadow-2xl relative text-center">
-                                <div className="w-16 h-16 bg-yellow-500/15 rounded-full flex items-center justify-center border border-yellow-500/20 text-yellow-500 mx-auto mb-3">
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                            <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-sm w-full shadow-2xl relative text-center border-t-4 border-t-yellow-500">
+                                <div className="w-16 h-16 bg-yellow-500/15 rounded-full flex items-center justify-center border border-yellow-500/20 text-yellow-500 mx-auto mb-4 mt-2">
                                     <Icon name="alert-triangle" size={32} />
                                 </div>
-                                <h2 className="text-lg font-bold text-zinc-100">Remover Capitão(ã)?</h2>
-                                <p className="text-sm text-zinc-400 mt-2">Você deseja remover <strong className="text-yellow-400">{confirmDialog.mc?.name}</strong> do posto de capitão(ã) do Trio {Number(confirmDialog.trioId) + 1}?</p>
+                                <h2 className="text-lg font-black uppercase tracking-wider text-zinc-100">Remover Capitão(ã)?</h2>
+                                <p className="text-sm text-zinc-400 mt-2 leading-relaxed">Você deseja remover <strong className="text-yellow-400">{confirmDialog.mc?.name}</strong> do posto de capitão(ã) do Trio {Number(confirmDialog.trioId) + 1}?</p>
                                 
                                 <div className="flex gap-3 w-full mt-6">
-                                    <button onClick={() => setConfirmDialog({ isOpen: false, mc: null, trioId: null })} className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold uppercase rounded-lg cursor-pointer">Cancelar</button>
-                                    <button onClick={() => executeRemoval(confirmDialog.mc, confirmDialog.trioId)} className="flex-1 py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold uppercase rounded-lg cursor-pointer">Sim, Remover</button>
+                                    <button onClick={() => setConfirmDialog({ isOpen: false, mc: null, trioId: null })} className="flex-1 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold uppercase rounded-lg cursor-pointer transition-colors">Cancelar</button>
+                                    <button onClick={() => executeRemoval(confirmDialog.mc, confirmDialog.trioId)} className="flex-1 py-3 bg-red-600 hover:bg-red-500 text-white text-xs font-bold uppercase rounded-lg cursor-pointer shadow-[0_0_15px_rgba(220,38,38,0.4)] transition-all">Remover</button>
                                 </div>
                             </div>
                         </div>
                     )}
 
-                    {/* Modal Confirmação Trio */}
+                    {/* Modal Remover Trio */}
                     {confirmTrioRemoval.isOpen && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-                            <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-sm w-full shadow-2xl relative text-center">
-                                <div className="w-16 h-16 bg-red-500/15 rounded-full flex items-center justify-center border border-red-500/20 text-red-500 mx-auto mb-3">
-                                    <Icon name="alert-triangle" size={32} />
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                            <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl max-w-sm w-full shadow-2xl relative text-center border-t-4 border-t-red-600">
+                                <div className="w-16 h-16 bg-red-500/15 rounded-full flex items-center justify-center border border-red-500/20 text-red-500 mx-auto mb-4 mt-2">
+                                    <Icon name="trash-2" size={32} />
                                 </div>
-                                <h2 className="text-lg font-bold text-zinc-100">Remover Trio?</h2>
-                                <p className="text-sm text-zinc-400 mt-2">Deseja remover o <strong className="text-red-400">Trio {Number(confirmTrioRemoval.trioId) + 1}</strong>? Os MCs voltarão para a lista geral.</p>
+                                <h2 className="text-lg font-black uppercase tracking-wider text-zinc-100">Excluir Trio?</h2>
+                                <p className="text-sm text-zinc-400 mt-2 leading-relaxed">Deseja remover o <strong className="text-red-400">Trio {Number(confirmTrioRemoval.trioId) + 1}</strong>? Os MCs que estiverem nele voltarão para a lista geral.</p>
                                 
                                 <div className="flex gap-3 w-full mt-6">
-                                    <button onClick={() => setConfirmTrioRemoval({ isOpen: false, trioId: null })} className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold uppercase rounded-lg cursor-pointer">Cancelar</button>
-                                    <button onClick={() => executeTrioRemoval(confirmTrioRemoval.trioId)} className="flex-1 py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold uppercase rounded-lg cursor-pointer">Sim, Remover</button>
+                                    <button onClick={() => setConfirmTrioRemoval({ isOpen: false, trioId: null })} className="flex-1 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold uppercase rounded-lg cursor-pointer transition-colors">Cancelar</button>
+                                    <button onClick={() => executeTrioRemoval(confirmTrioRemoval.trioId)} className="flex-1 py-3 bg-red-600 hover:bg-red-500 text-white text-xs font-bold uppercase rounded-lg cursor-pointer shadow-[0_0_15px_rgba(220,38,38,0.4)] transition-all">Excluir</button>
                                 </div>
                             </div>
                         </div>
