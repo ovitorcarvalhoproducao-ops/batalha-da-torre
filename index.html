@@ -19,7 +19,7 @@
     <style>
         .font-unbounded { font-family: 'Unbounded', sans-serif; }
         
-        /* Grid de Fundo */
+        /* Grid de Fundo com linhas verticais e horizontais em vermelho opaco */
         body {
             background-color: #09090b; /* zinc-950 */
             background-image: 
@@ -40,7 +40,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useMemo, useEffect, useRef } = React;
+        const { useState, useMemo, useEffect } = React;
         
         // Ícones via Lucide globais
         const Icon = ({ name, size = 16, className = "" }) => {
@@ -65,6 +65,10 @@
             // Estados de Confirmação (Modais)
             const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, mc: null, trioId: null });
             const [confirmTrioRemoval, setConfirmTrioRemoval] = useState({ isOpen: false, trioId: null });
+
+            // Estados do Sorteio
+            const [isShuffling, setIsShuffling] = useState(false);
+            const [countdown, setCountdown] = useState(5);
 
             // Estados de Customização Visual (Header)
             const [titleText, setTitleText] = useState('Batalha da Torre');
@@ -102,7 +106,6 @@
             const handleDragStart = (e, mc, sourceId) => {
                 setDraggedMcId(mc.id);
                 setDraggedSourceId(sourceId);
-                // Elemento visual arrastável
                 e.dataTransfer.setData('text/plain', mc.id);
                 e.dataTransfer.effectAllowed = 'move';
             };
@@ -163,7 +166,6 @@
 
             const requestRemoval = (mc, trioId, indexInTrio) => {
                 setWarning('');
-                // Se for o Capitão (índice 0), pede confirmação
                 if (indexInTrio === 0) {
                     setConfirmDialog({ isOpen: true, mc, trioId });
                 } else {
@@ -197,6 +199,98 @@
                 const existingKeys = Object.keys(trios).map(Number);
                 const nextIndex = existingKeys.length > 0 ? Math.max(...existingKeys) + 1 : 0;
                 setTrios(prev => ({ ...prev, [nextIndex]: [] }));
+            };
+
+            // Função de Sorteio com contagem regressiva e 5 mudanças encadeadas
+            const startShuffle = () => {
+                setIsShuffling(true);
+                setCountdown(5);
+
+                let currentCount = 5;
+                const timer = setInterval(() => {
+                    currentCount -= 1;
+                    if (currentCount > 0) {
+                        setCountdown(currentCount);
+                    } else {
+                        clearInterval(timer);
+                        setCountdown(0);
+                        setTimeout(() => {
+                            executeShuffle();
+                        }, 400);
+                    }
+                }, 1000);
+            };
+
+            const executeShuffle = async () => {
+                setIsShuffling(false);
+
+                await new Promise(resolve => setTimeout(resolve, 50));
+
+                let currentTrioValues = Object.values(trios);
+                const originalTrioValues = [...currentTrioValues];
+
+                const getDerangement = (currentArray, originalArrayToAvoid) => {
+                    if (currentArray.length <= 1) return [...currentArray];
+                    let newArray = [...currentArray];
+                    let isDerangement = false;
+                    let attempts = 0;
+                    
+                    while (!isDerangement && attempts < 200) {
+                        for (let i = newArray.length - 1; i > 0; i--) {
+                            const j = Math.floor(Math.random() * (i + 1));
+                            [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+                        }
+                        
+                        isDerangement = true;
+                        for (let i = 0; i < currentArray.length; i++) {
+                            if (newArray[i] === currentArray[i]) {
+                                isDerangement = false;
+                                break;
+                            }
+                            if (originalArrayToAvoid && newArray[i] === originalArrayToAvoid[i]) {
+                                isDerangement = false;
+                                break;
+                            }
+                        }
+                        attempts++;
+                    }
+                    return newArray;
+                };
+
+                for (let step = 1; step <= 5; step++) {
+                    await new Promise(resolve => {
+                        const isLastStep = step === 5;
+                        const nextTrioValues = getDerangement(
+                            currentTrioValues, 
+                            isLastStep ? originalTrioValues : null
+                        );
+                        currentTrioValues = nextTrioValues;
+
+                        const applyShuffle = () => {
+                            setTrios(() => {
+                                const newTrios = {};
+                                nextTrioValues.forEach((trio, index) => {
+                                    newTrios[index] = trio; 
+                                });
+                                return newTrios;
+                            });
+                        };
+
+                        if (document.startViewTransition) {
+                            const transition = document.startViewTransition(() => {
+                                ReactDOM.flushSync(() => {
+                                    applyShuffle();
+                                });
+                            });
+                            transition.finished.then(() => {
+                                setTimeout(resolve, isLastStep ? 0 : 150); 
+                            });
+                        } else {
+                            applyShuffle();
+                            setTimeout(resolve, 300);
+                        }
+                    });
+                }
             };
 
             // Proteção contra atualização/fechamento acidental da página
@@ -233,7 +327,9 @@
                                         }} 
                                     />
                                 ) : (
-                                    <Icon name="swords" size={40} className="text-zinc-50" />
+                                    <span className="inline-flex items-center justify-center">
+                                        <Icon name="swords" size={40} className="text-zinc-50" />
+                                    </span>
                                 )}
                                 <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
                                     <Icon name="camera" size={24} className="text-white" />
@@ -293,6 +389,16 @@
                                 />
                             </div>
                         </div>
+
+                        {/* Botão de Sorteio */}
+                        <button 
+                            onClick={startShuffle}
+                            className="mt-5 px-6 py-2.5 bg-purple-700 hover:bg-purple-600 text-white rounded-full font-bold uppercase tracking-widest text-xs flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(126,34,206,0.5)] cursor-pointer hover:scale-105"
+                        >
+                            <Icon name="shuffle" size={16} />
+                            Sortear Ordem
+                        </button>
+
                     </header>
 
                     {/* Alerta de erro */}
@@ -303,7 +409,8 @@
                     )}
 
                     <div className="max-w-[1400px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 relative z-10">
-                        {}
+                        
+                        {/* Coluna de MCs Disponíveis */}
                         <div className="lg:col-span-4 flex flex-col h-auto lg:h-[calc(100vh-280px)]">
                             <div className="bg-zinc-900/90 border border-zinc-800 rounded-2xl flex flex-col h-full shadow-2xl overflow-hidden backdrop-blur-md">
                                 <div className="p-4 bg-black/40 border-b border-zinc-800 flex items-center justify-between">
@@ -354,6 +461,7 @@
                                                 key={mc.id}
                                                 draggable
                                                 onDragStart={(e) => handleDragStart(e, mc, 'available')}
+                                                style={{ viewTransitionName: `mc-${mc.id.toString().replace(/[^a-zA-Z0-9]/g, '')}` }}
                                                 className="group flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800/80 border border-zinc-700/80 rounded-full cursor-grab active:cursor-grabbing hover:border-red-500 hover:bg-zinc-800 hover:shadow-[0_0_10px_rgba(239,68,68,0.2)] transition-all"
                                             >
                                                 <Icon name="mic-2" size={10} className="text-zinc-500 group-hover:text-red-400 transition-colors" />
@@ -372,7 +480,7 @@
                             </div>
                         </div>
 
-                        {}
+                        {/* Colunas dos Trios */}
                         <div className="lg:col-span-8">
                             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 h-full content-start pb-10">
                                 {Object.keys(trios).map((trioIndex) => {
@@ -381,7 +489,6 @@
                                     const count = trioMCs.length;
                                     const isOver = draggingOverId === numIndex;
 
-                                    // Lógica de cores das bordas do trio
                                     let borderColor = 'border-transparent bg-zinc-900/60 border-dashed';
                                     if (count > 0 && count < 3) borderColor = 'border-yellow-500/80 bg-zinc-900/80 border-solid shadow-[0_0_20px_rgba(234,179,8,0.15)]';
                                     if (count === 3) borderColor = 'border-green-500/80 bg-zinc-900/95 border-solid shadow-[0_0_20px_rgba(34,197,94,0.15)]';
@@ -423,6 +530,7 @@
                                                             draggable
                                                             onDragStart={(e) => handleDragStart(e, mc, trioIndex)}
                                                             onClick={() => requestRemoval(mc, numIndex, index)}
+                                                            style={{ viewTransitionName: `mc-${mc.id.toString().replace(/[^a-zA-Z0-9]/g, '')}` }}
                                                             title="Clique para remover"
                                                             className={`group relative overflow-hidden flex items-center p-2.5 h-[46px] rounded-lg cursor-pointer transition-all ${
                                                                 isCaptain 
@@ -449,7 +557,7 @@
                                                     );
                                                 })}
 
-                                                {/* Espaços Vazios Fixos (Sempre mantém o tamanho de 46px) */}
+                                                {/* Espaços Vazios Fixos (Mantém o tamanho exato) */}
                                                 {Array.from({ length: Math.max(0, 3 - count) }).map((_, i) => {
                                                     const isCaptainSlot = count === 0 && i === 0;
                                                     return (
@@ -490,7 +598,7 @@
                         </div>
                     </div>
 
-                    {}
+                    {/* Modais */}
                     
                     {/* Modal Capitão */}
                     {confirmDialog.isOpen && (
@@ -523,6 +631,19 @@
                                 <div className="flex gap-3 w-full mt-6">
                                     <button onClick={() => setConfirmTrioRemoval({ isOpen: false, trioId: null })} className="flex-1 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold uppercase rounded-lg cursor-pointer transition-colors">Cancelar</button>
                                     <button onClick={() => executeTrioRemoval(confirmTrioRemoval.trioId)} className="flex-1 py-3 bg-red-600 hover:bg-red-500 text-white text-xs font-bold uppercase rounded-lg cursor-pointer shadow-[0_0_15px_rgba(220,38,38,0.4)] transition-all">Excluir</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Modal Sorteio (Contagem Regressiva) */}
+                    {isShuffling && (
+                        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/95 backdrop-blur-md">
+                            <div className="text-center flex flex-col items-center">
+                                <Icon name="shuffle" size={48} className="text-purple-500 mb-6 animate-pulse" />
+                                <h2 className="text-xl md:text-3xl font-black uppercase tracking-[0.3em] text-zinc-100 mb-8 animate-pulse">Sorteando a Ordem</h2>
+                                <div className="text-[150px] leading-none font-black text-transparent bg-clip-text bg-gradient-to-b from-purple-400 to-purple-800">
+                                    {countdown}
                                 </div>
                             </div>
                         </div>
