@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=0.6">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Batalha da Torre - Draft Oficial</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -47,7 +47,7 @@
             useEffect(() => {
                 lucide.createIcons();
             }, [name]);
-            return <i data-lucide={name} className={className} style={{ width: size, height: size, display: 'inline-block' }}></i>;
+            return <span className="inline-flex items-center justify-center"><i data-lucide={name} className={className} style={{ width: size, height: size, display: 'inline-block' }}></i></span>;
         };
 
         function App() {
@@ -262,7 +262,7 @@
                                 value={titleText}
                                 onChange={(e) => setTitleText(e.target.value)}
                                 style={{ color: titleColor }}
-                                className="text-3xl md:text-5xl font-black uppercase tracking-widest bg-transparent border-b border-transparent focus:border-red-500/50 outline-none text-center w-full transition-colors pb-1"
+                                className="text-xl md:text-4xl font-black uppercase tracking-widest bg-transparent border-b border-transparent focus:border-red-500/50 outline-none text-center w-full transition-colors pb-1"
                             />
                             <div className="absolute right-0 translate-x-[120%] opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center">
                                 <label className="text-[9px] text-zinc-500 mb-1">Cor</label>
@@ -309,7 +309,7 @@
                                 <div className="p-4 bg-black/40 border-b border-zinc-800 flex items-center justify-between">
                                     <h2 className="text-sm font-bold flex items-center gap-2 text-zinc-100 uppercase tracking-wider">
                                         <Icon name="users" size={16} className="text-red-500" />
-                                        Lista de MCs
+                                        Lista de MC's
                                     </h2>
                                     <span className="bg-red-600/20 border border-red-500/30 text-red-400 text-xs font-bold px-2.5 py-1 rounded-md">
                                         {sortedAvailableMCs.length}
