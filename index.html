@@ -416,7 +416,7 @@
                             {/* Botão de Tema (Claro/Escuro) */}
                             <button 
                                 onClick={() => setIsLightMode(!isLightMode)}
-                                className="absolute top-0 left-0 p-2 text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1.5 text-[10px] uppercase tracking-widest font-bold cursor-pointer"
+                                className="absolute top-0 left-0 p-2 text-zinc-200 hover:text-zinc-300 transition-colors flex items-center gap-1.5 text-[10px] uppercase tracking-widest font-bold cursor-pointer"
                             >
                                 <Icon name={isLightMode ? "moon" : "sun"} size={16} />
                                 <span className="hidden sm:inline">{isLightMode ? "Modo Escuro" : "Modo Claro"}</span>
@@ -425,7 +425,7 @@
                             {/* Botão de Como Usar */}
                             <button 
                                 onClick={() => setIsHelpOpen(true)}
-                                className="absolute top-0 right-0 p-2 text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1.5 text-[10px] uppercase tracking-widest font-bold cursor-pointer"
+                                className="absolute top-0 right-0 p-2 text-zinc-200 hover:text-zinc-300 transition-colors flex items-center gap-1.5 text-[10px] uppercase tracking-widest font-bold cursor-pointer"
                             >
                                 <Icon name="help-circle" size={16} />
                                 <span className="hidden sm:inline">Como usar</span>
@@ -585,7 +585,7 @@
                                         onDrop={(e) => handleDrop(e, 'available')}
                                     >
                                         {sortedAvailableMCs.length === 0 ? (
-                                            <div className="w-full h-40 flex flex-col items-center justify-center text-zinc-600 space-y-3 opacity-50">
+                                            <div className="w-full h-40 flex flex-col items-center justify-center text-zinc-200 space-y-3 opacity-50">
                                                 <Icon name="mic-2" size={32} />
                                                 <p className="text-xs font-medium text-center uppercase tracking-widest">Lista Vazia</p>
                                             </div>
