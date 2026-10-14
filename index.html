@@ -176,8 +176,8 @@
         body.light-mode .text-yellow-400 { color: #d97706 !important; } 
         
         body.light-mode .empty-captain-text { color: #b45309 !important; }
-        body.light-mode .empty-regular-text { color: #000000 !important; }
-        body.light-mode .empty-regular-box { border-color: rgba(0,0,0,0.4) !important; background-color: rgba(0,0,0,0.04) !important; }
+        body.light-mode .empty-regular-text { color: rgba(0, 0, 0, 0.4) !important; }
+        body.light-mode .empty-regular-box { border-color: rgba(0, 0, 0, 0.4) !important; background-color: rgba(0, 0, 0, 0.04) !important; }
 
         body.light-mode .badge-complete { background-color: rgba(34, 197, 94, 0.25) !important; color: #15803d !important; border: 1px solid rgba(34, 197, 94, 0.6) !important; font-weight: 700 !important; }
 
@@ -301,6 +301,10 @@
             const [appMode, setAppMode] = useState(initialMode);
             const [isModeInfoOpen, setIsModeInfoOpen] = useState(false);
 
+            // Estados de controle para expandir seletores no mobile
+            const [isThemeExpanded, setIsThemeExpanded] = useState(false);
+            const [isModeExpanded, setIsModeExpanded] = useState(false);
+
             const [newMcName, setNewMcName] = useState('');
             const [warning, setWarning] = useState('');
             const [availableMCs, setAvailableMCs] = useState([]);
@@ -319,11 +323,12 @@
 
             const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, mc: null, trioId: null });
             const [confirmTrioRemoval, setConfirmTrioRemoval] = useState({ isOpen: false, trioId: null });
+            const [confirmGoToChaveamento, setConfirmGoToChaveamento] = useState(false);
 
             const [isShuffling, setIsShuffling] = useState(false);
-            const [countdown, setCountdown] = useState(appMode === 'chaveamento' ? 3 : 5);
+            const [countdown, setCountdown] = useState(initialMode === 'chaveamento' ? 3 : 5);
             const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-            const [configCountdown, setConfigCountdown] = useState(appMode === 'chaveamento' ? 3 : 5);
+            const [configCountdown, setConfigCountdown] = useState(initialMode === 'chaveamento' ? 3 : 5);
             const [configShuffleSteps, setConfigShuffleSteps] = useState(5);
             const [configGroupSize, setConfigGroupSize] = useState(initialMode === 'chaveamento' ? 1 : 3); 
 
@@ -456,9 +461,18 @@
                 try {
                     window.history.pushState(null, '', `?mode=${targetMode}`);
                 } catch (e) {
-                    // Previne crash em ambientes iframes/blob se o pushState for bloqueado
                     console.warn("URL update blocked by iframe environment.");
                 }
+            };
+
+            const handleGoToChaveamentoConfirm = () => {
+                setConfirmGoToChaveamento(false);
+                setAppMode('chaveamento');
+                setAvailableMCs([]);
+                setDrawnGroups([]);
+                try {
+                    window.history.pushState(null, '', `?mode=chaveamento`);
+                } catch (e) {}
             };
 
             const handleDragStart = (e, mc, sourceId) => {
@@ -746,48 +760,60 @@
                 return 'Grupo';
             };
 
+            const hasAnyGroupContent = Object.values(trios).some(group => group.length > 0);
+
             return (
                 <div className="min-h-screen p-4 md:p-8 pb-20 relative z-10 flex flex-col justify-between">
                     <div>
                         <header className="mb-12 text-center flex flex-col items-center justify-center space-y-4 relative z-10 mt-4">
                             
-                            <div className="absolute top-0 left-0 flex flex-col gap-3 items-start">
-                                <div className="p-1 apple-btn rounded-full flex items-center gap-1 w-max">
+                            {/* Seletores no Topo Esquerdo (Modo Mobile Expansível) */}
+                            <div className="absolute top-0 left-0 flex flex-col gap-3 items-start z-30">
+                                
+                                {/* Seletor de Tema Mobile Expansível */}
+                                <div 
+                                    className="apple-btn rounded-full p-1 flex items-center gap-1 cursor-pointer overflow-hidden transition-all duration-300 shadow-lg"
+                                    onClick={() => !isThemeExpanded && setIsThemeExpanded(true)}
+                                >
                                     <button 
-                                        onClick={() => setTheme('dark')}
-                                        className={`w-9 h-8 rounded-full flex items-center justify-center transition-all duration-300 theme-selector-btn ${theme === 'dark' ? 'bg-white text-black shadow-md' : 'text-zinc-300 hover:text-white'}`}
+                                        onClick={(e) => { e.stopPropagation(); setTheme('dark'); setIsThemeExpanded(false); }}
+                                        className={`w-9 h-8 rounded-full flex items-center justify-center transition-all duration-300 theme-selector-btn ${theme === 'dark' ? 'bg-white text-black shadow-md' : 'text-zinc-300 hover:text-white'} ${!isThemeExpanded && theme !== 'dark' ? 'hidden sm:flex' : 'flex'}`}
                                         title="Modo Escuro"
                                     >
                                         <Icon name="moon" size={14} />
                                     </button>
                                     <button 
-                                        onClick={() => setTheme('light')}
-                                        className={`w-9 h-8 rounded-full flex items-center justify-center transition-all duration-300 theme-selector-btn ${theme === 'light' ? 'bg-white text-black shadow-md' : 'text-zinc-300 hover:text-white'}`}
+                                        onClick={(e) => { e.stopPropagation(); setTheme('light'); setIsThemeExpanded(false); }}
+                                        className={`w-9 h-8 rounded-full flex items-center justify-center transition-all duration-300 theme-selector-btn ${theme === 'light' ? 'bg-white text-black shadow-md' : 'text-zinc-300 hover:text-white'} ${!isThemeExpanded && theme !== 'light' ? 'hidden sm:flex' : 'flex'}`}
                                         title="Modo Claro"
                                     >
                                         <Icon name="sun" size={14} />
                                     </button>
                                     <button 
-                                        onClick={() => setTheme('red')}
-                                        className={`w-9 h-8 rounded-full flex items-center justify-center transition-all duration-300 theme-selector-btn ${theme === 'red' ? 'bg-white text-black shadow-md' : 'text-zinc-300 hover:text-white'}`}
+                                        onClick={(e) => { e.stopPropagation(); setTheme('red'); setIsThemeExpanded(false); }}
+                                        className={`w-9 h-8 rounded-full flex items-center justify-center transition-all duration-300 theme-selector-btn ${theme === 'red' ? 'bg-white text-black shadow-md' : 'text-zinc-300 hover:text-white'} ${!isThemeExpanded && theme !== 'red' ? 'hidden sm:flex' : 'flex'}`}
                                         title="Modo Vermelho"
                                     >
                                         <Icon name="flame" size={14} />
                                     </button>
                                 </div>
 
+                                {/* Seletor de Modo Mobile Expansível */}
                                 <div className="flex flex-col items-start w-max">
-                                    <div className="p-1 apple-btn rounded-full flex items-center justify-between gap-1 w-max">
+                                    <div 
+                                        className="apple-btn rounded-full p-1 flex items-center gap-1 cursor-pointer overflow-hidden transition-all duration-300 shadow-lg"
+                                        onClick={() => !isModeExpanded && setIsModeExpanded(true)}
+                                    >
                                         <button 
-                                            onClick={() => handleModeSwitchRequest('draft')}
-                                            className={`w-14 h-8 rounded-full flex items-center justify-center transition-all duration-300 theme-selector-btn ${appMode === 'draft' ? 'bg-white text-black shadow-md' : 'text-zinc-300 hover:text-white'}`}
+                                            onClick={(e) => { e.stopPropagation(); handleModeSwitchRequest('draft'); setIsModeExpanded(false); }}
+                                            className={`w-12 h-8 rounded-full flex items-center justify-center transition-all duration-300 theme-selector-btn ${appMode === 'draft' ? 'bg-white text-black shadow-md' : 'text-zinc-300 hover:text-white'} ${!isModeExpanded && appMode !== 'draft' ? 'hidden sm:flex' : 'flex'}`}
                                             title="Modo Draft"
                                         >
                                             <Icon name="list" size={14} />
                                         </button>
                                         <button 
-                                            onClick={() => handleModeSwitchRequest('chaveamento')}
-                                            className={`w-14 h-8 rounded-full flex items-center justify-center transition-all duration-300 theme-selector-btn ${appMode === 'chaveamento' ? 'bg-white text-black shadow-md' : 'text-zinc-300 hover:text-white'}`}
+                                            onClick={(e) => { e.stopPropagation(); handleModeSwitchRequest('chaveamento'); setIsModeExpanded(false); }}
+                                            className={`w-12 h-8 rounded-full flex items-center justify-center transition-all duration-300 theme-selector-btn ${appMode === 'chaveamento' ? 'bg-white text-black shadow-md' : 'text-zinc-300 hover:text-white'} ${!isModeExpanded && appMode !== 'chaveamento' ? 'hidden sm:flex' : 'flex'}`}
                                             title="Modo Chaveamento"
                                         >
                                             <Icon name="swords" size={14} />
@@ -887,6 +913,7 @@
                                     <Icon name="shuffle" size={16} />
                                     {appMode === 'chaveamento' ? 'Sortear Confronto' : 'Sortear Ordem'}
                                 </button>
+
                                 <button 
                                     onClick={() => setIsSettingsOpen(true)}
                                     className="apple-btn w-10 h-10 flex items-center justify-center rounded-full transition-all cursor-pointer hover:scale-105"
@@ -894,6 +921,18 @@
                                 >
                                     <Icon name="settings" size={16} />
                                 </button>
+
+                                {appMode === 'draft' && (
+                                    <button 
+                                        onClick={() => hasAnyGroupContent && setConfirmGoToChaveamento(true)}
+                                        disabled={!hasAnyGroupContent}
+                                        className={`apple-btn px-4 h-10 rounded-full font-semibold tracking-wide text-xs flex items-center justify-center gap-2 transition-all ${hasAnyGroupContent ? 'cursor-pointer hover:scale-105' : 'opacity-40 cursor-not-allowed'}`}
+                                        title={hasAnyGroupContent ? "Ir para o Chaveamento com estes grupos" : "Adicione MCs em algum grupo primeiro"}
+                                    >
+                                        <Icon name="swords" size={16} />
+                                        <span className="hidden sm:inline">Ir pro Chaveamento</span>
+                                    </button>
+                                )}
                             </div>
 
                         </header>
@@ -921,8 +960,8 @@
                                         <div className="flex items-center gap-2">
                                             <button 
                                                 onClick={handleCopyMCs}
-                                                className="h-9 min-w-[44px] px-3.5 bg-white/10 hover:bg-white/20 border border-white/10 rounded-full text-zinc-300 hover:text-white transition-colors cursor-pointer flex items-center justify-center"
-                                                title="Copiar Lista Numerada"
+                                                className="h-9 min-w-[44px] px-3.5 bg-white/10 hover:bg-white/20 border border-white/10 rounded-full text-zinc-300 hover:text-white transition-colors cursor-pointer flex items-center justify-center shadow-sm"
+                                                title="Copiar Lista Numerada e Compartilhar"
                                             >
                                                 <Icon name="copy" size={16} />
                                             </button>
@@ -976,7 +1015,7 @@
                                                     title={appMode === 'chaveamento' ? "Clique para enviar para a chave" : "Arraste para formar o grupo"}
                                                 >
                                                     <Icon name="mic-2" size={12} className="text-zinc-300 group-hover:text-red-400 transition-colors" />
-                                                    <span className="font-semibold text-[13px] text-zinc-100 whitespace-nowrap tracking-tight">{mc.name}</span>
+                                                    <span className="font-semibold text-[15px] text-zinc-100 whitespace-nowrap tracking-tight">{mc.name}</span>
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
@@ -1119,6 +1158,7 @@
 
                     <footer className="mt-12 text-center text-xs text-zinc-400 relative z-10 py-6 border-t border-white/10 font-medium tracking-wide">
                         <p>Criado por Vitor Carvalho. Sugestões? Fale comigo no instagram: <a href="https://www.instagram.com/ovitorcarvalho/" target="_blank" rel="noopener noreferrer" className="text-red-500 hover:text-red-400 hover:underline transition-colors">@ovitorcarvalho</a></p>
+                        <p className="mt-2 text-[10px] opacity-60">Versão 2.1</p>
                     </footer>
                     
                     {confirmDialog.isOpen && (
@@ -1155,16 +1195,33 @@
                         </div>
                     )}
 
+                    {confirmGoToChaveamento && (
+                        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/60 backdrop-blur-2xl">
+                            <div className="animate-modal-pop apple-glass p-8 rounded-[2rem] max-w-sm w-full relative text-center">
+                                <div className="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center border border-blue-500/40 text-blue-400 mx-auto mb-5 shadow-inner">
+                                    <Icon name="swords" size={32} strokeWidth={1.5} />
+                                </div>
+                                <h2 className="text-xl font-semibold tracking-tight text-zinc-100">Ir pro Chaveamento?</h2>
+                                <p className="text-sm text-zinc-300 mt-3 leading-relaxed">Deseja transferir todos os grupos formados atualmente para o <strong className="text-white">Modo Chaveamento</strong> mantendo a mesma ordem e formato para sortear os confrontos?</p>
+                                
+                                <div className="flex gap-3 w-full mt-8">
+                                    <button onClick={() => setConfirmGoToChaveamento(false)} className="flex-1 py-3.5 bg-white/10 hover:bg-white/20 text-zinc-100 text-sm font-semibold rounded-2xl cursor-pointer transition-colors backdrop-blur-md">Cancelar</button>
+                                    <button onClick={handleGoToChaveamentoConfirm} className="modal-red-btn flex-1 py-3.5 bg-red-600 hover:bg-red-500 text-white text-sm font-semibold rounded-2xl cursor-pointer shadow-md shadow-red-600/20 transition-all">Transferir</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {isShuffling && (
                         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-3xl">
-                            <div className="animate-modal-pop text-center flex flex-col items-center">
-                                <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center border border-red-500/20 mb-6 shadow-[0_0_40px_rgba(220,38,38,0.2)]">
-                                    <Icon name="shuffle" size={40} className="shuffle-icon animate-pulse" strokeWidth={1.5} />
+                            <div className="animate-modal-pop text-center flex flex-col items-center max-w-[90vw]">
+                                <div className="w-16 h-16 md:w-20 md:h-20 bg-red-500/10 rounded-full flex items-center justify-center border border-red-500/20 mb-4 md:mb-6 shadow-[0_0_40px_rgba(220,38,38,0.2)]">
+                                    <Icon name="shuffle" size={32} className="shuffle-icon animate-pulse" strokeWidth={1.5} />
                                 </div>
-                                <h2 className="shuffle-title text-2xl md:text-3xl font-unbounded font-bold uppercase tracking-tight mb-8 animate-pulse">
+                                <h2 className="shuffle-title text-xl md:text-3xl font-unbounded font-bold uppercase tracking-tight mb-4 md:mb-8 animate-pulse">
                                     {appMode === 'chaveamento' ? 'Sorteando Confronto' : 'Sorteando a Ordem'}
                                 </h2>
-                                <div className="shuffle-countdown font-unbounded font-bold uppercase text-[120px] md:text-[150px] leading-none drop-shadow-lg">
+                                <div className="shuffle-countdown font-unbounded font-bold uppercase text-[70px] sm:text-[100px] md:text-[150px] leading-none drop-shadow-lg">
                                     {countdown}
                                 </div>
                             </div>
@@ -1190,27 +1247,27 @@
 
                     {drawnResultModal.isOpen && (
                         <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/60 backdrop-blur-2xl">
-                            <div className="animate-modal-pop apple-glass p-8 rounded-[2rem] max-w-md w-full relative text-center border-2 border-red-500/50 shadow-[0_0_50px_rgba(220,38,38,0.3)]">
-                                <div className="w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center border border-red-500/40 text-red-500 mx-auto mb-6 shadow-inner animate-pulse">
-                                    <Icon name="crosshair" size={40} strokeWidth={1.5} />
+                            <div className="animate-modal-pop apple-glass p-6 md:p-8 rounded-[2rem] max-w-md w-full relative text-center border-2 border-red-500/50 shadow-[0_0_50px_rgba(220,38,38,0.3)] mx-4">
+                                <div className="w-16 h-16 md:w-20 md:h-20 bg-red-500/20 rounded-full flex items-center justify-center border border-red-500/40 text-red-500 mx-auto mb-4 md:mb-6 shadow-inner animate-pulse">
+                                    <Icon name="crosshair" size={32} strokeWidth={1.5} />
                                 </div>
-                                <h2 className="text-sm font-semibold tracking-widest text-zinc-400 uppercase mb-2">Sorteado</h2>
-                                <h3 className="text-3xl font-unbounded font-bold text-white mb-6 uppercase">
+                                <h2 className="text-xs md:text-sm font-semibold tracking-widest text-zinc-400 uppercase mb-2">Sorteado</h2>
+                                <h3 className="text-2xl md:text-3xl font-unbounded font-bold text-white mb-4 md:mb-6 uppercase">
                                     {configGroupSize === 1 ? 'MC' : getGroupName()} {Number(drawnResultModal.groupIndex) + 1}
                                 </h3>
                                 
-                                <div className="space-y-3 mb-8">
+                                <div className="space-y-2.5 md:space-y-3 mb-6 md:mb-8 max-h-[40vh] overflow-y-auto">
                                     {drawnResultModal.result.map((mc, idx) => (
                                         <div key={idx} className="bg-white/10 border border-white/20 rounded-2xl py-3 px-4 flex items-center justify-center gap-3 shadow-md">
                                             <Icon name={idx === 0 && configGroupSize > 1 && appMode === 'draft' ? "crown" : "mic-2"} size={16} className={idx === 0 && configGroupSize > 1 && appMode === 'draft' ? "text-yellow-400" : "text-zinc-300"} />
-                                            <span className={`font-semibold text-lg ${idx === 0 && configGroupSize > 1 && appMode === 'draft' ? "text-yellow-300" : "text-white"}`}>{mc.name}</span>
+                                            <span className={`font-semibold text-base md:text-lg ${idx === 0 && configGroupSize > 1 && appMode === 'draft' ? "text-yellow-300" : "text-white"}`}>{mc.name}</span>
                                         </div>
                                     ))}
                                 </div>
                                 
                                 <button 
                                     onClick={() => setDrawnResultModal({ isOpen: false, result: null, groupIndex: null })} 
-                                    className="modal-red-btn w-full py-4 bg-red-600 hover:bg-red-500 text-white text-sm font-bold uppercase tracking-widest rounded-2xl cursor-pointer shadow-lg shadow-red-600/30 transition-all"
+                                    className="modal-red-btn w-full py-3.5 md:py-4 bg-red-600 hover:bg-red-500 text-white text-xs md:text-sm font-bold uppercase tracking-widest rounded-2xl cursor-pointer shadow-lg shadow-red-600/30 transition-all"
                                 >
                                     Continuar
                                 </button>
