@@ -245,6 +245,10 @@
         body.red-mode .bg-red-500\/10, body.red-mode .bg-red-500\/5 { background-color: rgba(0,0,0,0.2) !important; }
         body.red-mode .shadow-red-600\/20 { box-shadow: 0 8px 20px rgba(0,0,0,0.4) !important; }
         
+        /* Regra Exclusiva para não escurecer avisos críticos no modo vermelho */
+        body.red-mode .text-always-red { color: #ef4444 !important; }
+        body.red-mode .red-mode-white { color: #ffffff !important; }
+        
         body.red-mode .shuffle-title { color: #ffffff !important; }
         body.red-mode .shuffle-icon { color: #ffffff !important; }
         body.red-mode .shuffle-countdown { background-image: none !important; background-color: transparent !important; color: #ffffff !important; -webkit-text-fill-color: #ffffff !important; }
@@ -295,15 +299,11 @@
 
         function App() {
             const urlParams = new URLSearchParams(window.location.search);
-            const initialMode = urlParams.get('mode') === 'chaveamento' ? 'chaveamento' : 'draft';
+            const initialMode = ['chaveamento', 'folhinha'].includes(urlParams.get('mode')) ? urlParams.get('mode') : 'draft';
 
             const [theme, setTheme] = useState('dark');
             const [appMode, setAppMode] = useState(initialMode);
             const [isModeInfoOpen, setIsModeInfoOpen] = useState(false);
-
-            // Estados de controle para expandir seletores no mobile
-            const [isThemeExpanded, setIsThemeExpanded] = useState(false);
-            const [isModeExpanded, setIsModeExpanded] = useState(false);
 
             const [newMcName, setNewMcName] = useState('');
             const [warning, setWarning] = useState('');
@@ -311,7 +311,7 @@
             
             // Inicialização dinâmica de caixas baseada no modo atual
             const initialTrios = {};
-            const initialBoxCount = initialMode === 'chaveamento' ? 16 : 8;
+            const initialBoxCount = (initialMode === 'chaveamento' || initialMode === 'folhinha') ? 16 : 8;
             for (let i = 0; i < initialBoxCount; i++) {
                 initialTrios[i] = [];
             }
@@ -324,18 +324,26 @@
             const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, mc: null, trioId: null });
             const [confirmTrioRemoval, setConfirmTrioRemoval] = useState({ isOpen: false, trioId: null });
             const [confirmGoToChaveamento, setConfirmGoToChaveamento] = useState(false);
+            const [confirmRestartDraw, setConfirmRestartDraw] = useState(false);
 
             const [isShuffling, setIsShuffling] = useState(false);
-            const [countdown, setCountdown] = useState(initialMode === 'chaveamento' ? 3 : 5);
+            const [countdown, setCountdown] = useState((initialMode === 'chaveamento' || initialMode === 'folhinha') ? 3 : 5);
             const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-            const [configCountdown, setConfigCountdown] = useState(initialMode === 'chaveamento' ? 3 : 5);
+            const [configCountdown, setConfigCountdown] = useState((initialMode === 'chaveamento' || initialMode === 'folhinha') ? 3 : 5);
             const [configShuffleSteps, setConfigShuffleSteps] = useState(5);
-            const [configGroupSize, setConfigGroupSize] = useState(initialMode === 'chaveamento' ? 1 : 3); 
+            const [configGroupSize, setConfigGroupSize] = useState((initialMode === 'chaveamento' || initialMode === 'folhinha') ? 1 : 3); 
 
             const [allowRepetition, setAllowRepetition] = useState(false);
             const [drawnGroups, setDrawnGroups] = useState([]);
             const [drawnResultModal, setDrawnResultModal] = useState({ isOpen: false, result: null, groupIndex: null });
             const [confirmModeSwitch, setConfirmModeSwitch] = useState({ isOpen: false, targetMode: null });
+
+            // Estados da Folhinha
+            const [bracketSize, setBracketSize] = useState(16);
+            const [bracketParticipants, setBracketParticipants] = useState([]);
+            const [bracketAdvancements, setBracketAdvancements] = useState({});
+            const [confirmClearBracket, setConfirmClearBracket] = useState(false);
+            const [lastEliminatedMcs, setLastEliminatedMcs] = useState([]);
 
             const [isHelpOpen, setIsHelpOpen] = useState(false);
 
@@ -372,10 +380,23 @@
             const handleAddMc = (e) => {
                 e.preventDefault();
                 if (!newMcName.trim()) return;
-                const newMc = { id: Date.now().toString() + Math.random(), name: newMcName.trim() };
-                setAvailableMCs([...availableMCs, newMc]);
-                setNewMcName('');
-                setWarning('');
+                
+                // Quebra a string por vírgulas ou quebras de linha
+                const rawNames = newMcName.split(/,|\n/);
+                
+                const processedNames = rawNames.map(name => {
+                    return name.replace(/^[\s\d\.\-\*•]+/, '').trim();
+                }).filter(name => name.length > 0);
+
+                if (processedNames.length > 0) {
+                    const newMcs = processedNames.map(name => ({
+                        id: Date.now().toString() + Math.random(),
+                        name: name
+                    }));
+                    setAvailableMCs([...availableMCs, ...newMcs]);
+                    setNewMcName('');
+                    setWarning('');
+                }
             };
 
             const handleCopyMCs = async () => {
@@ -407,6 +428,106 @@
                 }
             };
 
+            const handleCopyDrawnAndNotDrawn = async () => {
+                const drawnIds = new Set(bracketParticipants.flat().map(mc => mc.id));
+                const drawnNames = bracketParticipants.map((group, idx) => `${idx + 1}. ${group.map(m => m.name).join(' / ')}`);
+
+                const currentNotDrawnGroups = Object.values(trios).filter(group => group.length > 0 && !group.some(mc => drawnIds.has(mc.id)));
+                const allNotDrawnGroups = currentNotDrawnGroups.length > 0 ? currentNotDrawnGroups : lastEliminatedMcs;
+                const notDrawnNames = allNotDrawnGroups.map((group, idx) => `${idx + 1}. ${group.map(m => m.name).join(' / ')}`);
+
+                let text = `Mc's Sorteados (${drawnNames.length}):\n`;
+                text += drawnNames.length > 0 ? drawnNames.join('\n') : 'Nenhum';
+                text += `\n\nMc's não sorteados (${notDrawnNames.length}):\n`;
+                text += notDrawnNames.length > 0 ? notDrawnNames.join('\n') : 'Nenhum';
+
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    setWarning('📋 Lista de Sorteados e Não Sorteados copiada!');
+                    setTimeout(() => setWarning(''), 3000);
+                } catch (err) {
+                    console.error('Erro ao copiar', err);
+                }
+                document.body.removeChild(textArea);
+
+                if (navigator.share) {
+                    try {
+                        await navigator.share({
+                            title: 'Resultado do Sorteio',
+                            text: text
+                        });
+                    } catch (err) {}
+                }
+            };
+
+            const handleExportBracket = async () => {
+                const numRounds = Math.log2(bracketSize) + 1;
+                let text = `🏆 CHAVE DO TORNEIO - ${titleText.toUpperCase()} 🏆\n\n`;
+
+                const getRoundName = (r, totalR) => {
+                    const matchesCount = bracketSize / Math.pow(2, r + 1);
+                    if (matchesCount === 16) return "16 AVOS DE FINAL";
+                    if (matchesCount === 8) return "OITAVAS DE FINAL";
+                    if (matchesCount === 4) return "QUARTAS DE FINAL";
+                    if (matchesCount === 2) return "SEMIFINAL";
+                    if (matchesCount === 1) return "FINAL";
+                    return `FASE ${r + 1}`;
+                };
+
+                for (let r = 0; r < numRounds - 1; r++) {
+                    const numMatches = bracketSize / Math.pow(2, r + 1);
+                    let roundHasData = false;
+                    let roundText = `--- ${getRoundName(r, numRounds)} ---\n`;
+
+                    for (let m = 0; m < numMatches; m++) {
+                        let p1Data = r === 0 ? (bracketParticipants[m * 2] || null) : (bracketAdvancements[`${r-1}_${m * 2}`] || null);
+                        let p2Data = r === 0 ? (bracketParticipants[m * 2 + 1] || null) : (bracketAdvancements[`${r-1}_${m * 2 + 1}`] || null);
+
+                        if (p1Data || p2Data) roundHasData = true;
+
+                        const p1Name = p1Data ? p1Data.map(mc => mc.name).join(' / ') : 'Aguardando';
+                        const p2Name = p2Data ? p2Data.map(mc => mc.name).join(' / ') : 'Aguardando';
+
+                        roundText += `Confronto ${m + 1}: ${p1Name} vs ${p2Name}\n`;
+                    }
+
+                    if (roundHasData || r === 0) {
+                        text += roundText + '\n';
+                    }
+                }
+
+                const champData = bracketAdvancements[`${numRounds - 2}_0`];
+                if (champData) {
+                    text += `👑 CAMPEÃO: ${champData.map(mc => mc.name).join(' / ')}\n`;
+                }
+
+                const textArea = document.createElement("textarea");
+                textArea.value = text.trim();
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    setWarning('📋 Chave do torneio copiada com sucesso!');
+                    setTimeout(() => setWarning(''), 3000);
+                } catch (err) {
+                    console.error('Erro ao copiar chave', err);
+                }
+                document.body.removeChild(textArea);
+
+                if (navigator.share) {
+                    try {
+                        await navigator.share({
+                            title: `Chave - ${titleText}`,
+                            text: text.trim()
+                        });
+                    } catch (err) {}
+                }
+            };
+
             const handleAutoAssign = (mc) => {
                 if (appMode !== 'chaveamento') return;
 
@@ -433,6 +554,15 @@
 
             const handleModeSwitchRequest = (targetMode) => {
                 if (appMode === targetMode) return;
+                
+                // Permite transição livre entre chaveamento e folhinha sem pedir reset de dados
+                if ((appMode === 'chaveamento' && targetMode === 'folhinha') || (appMode === 'folhinha' && targetMode === 'chaveamento')) {
+                    setAppMode(targetMode);
+                    setIsModeInfoOpen(false);
+                    try { window.history.pushState(null, '', `?mode=${targetMode}`); } catch (e) {}
+                    return;
+                }
+
                 const hasProgress = availableMCs.length > 0 || Object.values(trios).some(t => t.length > 0);
                 if (hasProgress) {
                     setConfirmModeSwitch({ isOpen: true, targetMode });
@@ -446,15 +576,17 @@
                 setAvailableMCs([]);
                 
                 let newTrios = {};
-                let boxCount = targetMode === 'chaveamento' ? 16 : 8;
+                let boxCount = (targetMode === 'chaveamento' || targetMode === 'folhinha') ? 16 : 8;
                 for (let i = 0; i < boxCount; i++) {
                     newTrios[i] = [];
                 }
                 setTrios(newTrios);
                 
                 setDrawnGroups([]);
-                setConfigGroupSize(targetMode === 'chaveamento' ? 1 : 3);
-                setConfigCountdown(targetMode === 'chaveamento' ? 3 : 5);
+                setBracketParticipants([]);
+                setBracketAdvancements({});
+                setConfigGroupSize((targetMode === 'chaveamento' || targetMode === 'folhinha') ? 1 : 3);
+                setConfigCountdown((targetMode === 'chaveamento' || targetMode === 'folhinha') ? 3 : 5);
                 setConfirmModeSwitch({ isOpen: false, targetMode: null });
                 setWarning('');
                 
@@ -613,6 +745,38 @@
             };
 
             const startShuffle = () => {
+                if (appMode === 'folhinha') {
+                    const numRounds = Math.log2(bracketSize) + 1;
+                    let targetRound = -1;
+                    for (let r = numRounds - 2; r >= 0; r--) {
+                        if (r === 0) {
+                            if (bracketParticipants.filter(Boolean).length >= 2) {
+                                targetRound = 0;
+                                break;
+                            }
+                        } else {
+                            const numSlots = bracketSize / Math.pow(2, r);
+                            let count = 0;
+                            for (let s = 0; s < numSlots; s++) {
+                                if (bracketAdvancements[`${r-1}_${s}`]) count++;
+                            }
+                            if (count >= 2) {
+                                targetRound = r;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (targetRound === -1) {
+                        setWarning("Adicione ou avance pelo menos 2 participantes na chave para sortear os confrontos!");
+                        setTimeout(() => setWarning(''), 3500);
+                        return;
+                    }
+
+                    executeFolhinhaShuffle();
+                    return;
+                }
+
                 if (appMode === 'chaveamento') {
                     const validGroups = Object.entries(trios).filter(([_, mcs]) => mcs.length > 0);
                     let availableToDraw = validGroups;
@@ -622,8 +786,13 @@
                     }
 
                     if (availableToDraw.length === 0) {
-                        setWarning(validGroups.length === 0 ? "Nenhum participante adicionado nas chaves!" : "Todos já foram sorteados! Ative a repetição ou zere o sorteio.");
-                        setTimeout(() => setWarning(''), 4000);
+                        if (validGroups.length === 0) {
+                            setWarning("Nenhum participante adicionado nas chaves!");
+                            setTimeout(() => setWarning(''), 4000);
+                        } else {
+                            // Quando tenta sortear mas já sorteou todo mundo, ativa o Modal de Reiniciar
+                            setConfirmRestartDraw(true);
+                        }
                         return;
                     }
                 }
@@ -642,12 +811,144 @@
                         setTimeout(() => {
                             if (appMode === 'draft') {
                                 executeShuffle();
+                            } else if (appMode === 'folhinha') {
+                                executeFolhinhaShuffle();
                             } else {
                                 executeChaveamentoDraw();
                             }
                         }, 400);
                     }
                 }, 1000);
+            };
+
+            const executeFolhinhaShuffle = async () => {
+                setIsShuffling(false);
+                await new Promise(resolve => setTimeout(resolve, 50));
+
+                const numRounds = Math.log2(bracketSize) + 1;
+                let targetRound = -1;
+                for (let r = numRounds - 2; r >= 0; r--) {
+                    if (r === 0) {
+                        if (bracketParticipants.filter(Boolean).length >= 2) {
+                            targetRound = 0;
+                            break;
+                        }
+                    } else {
+                        const numSlots = bracketSize / Math.pow(2, r);
+                        let count = 0;
+                        for (let s = 0; s < numSlots; s++) {
+                            if (bracketAdvancements[`${r-1}_${s}`]) count++;
+                        }
+                        if (count >= 2) {
+                            targetRound = r;
+                            break;
+                        }
+                    }
+                }
+
+                if (targetRound === -1) return;
+
+                const numSlots = bracketSize / Math.pow(2, targetRound);
+                let currentSlots = [];
+                if (targetRound === 0) {
+                    for (let s = 0; s < numSlots; s++) {
+                        currentSlots.push(bracketParticipants[s] || null);
+                    }
+                } else {
+                    for (let s = 0; s < numSlots; s++) {
+                        currentSlots.push(bracketAdvancements[`${targetRound - 1}_${s}`] || null);
+                    }
+                }
+
+                const populatedIndices = [];
+                const populatedValues = [];
+                currentSlots.forEach((val, idx) => {
+                    if (val !== null) {
+                        populatedIndices.push(idx);
+                        populatedValues.push(val);
+                    }
+                });
+
+                if (populatedValues.length <= 1) return;
+
+                let currentValues = [...populatedValues];
+                const originalValues = [...populatedValues];
+
+                const getDerangement = (currentArray, originalArrayToAvoid) => {
+                    if (currentArray.length <= 1) return [...currentArray];
+                    let newArray = [...currentArray];
+                    let isDerangement = false;
+                    let attempts = 0;
+                    while (!isDerangement && attempts < 200) {
+                        for (let i = newArray.length - 1; i > 0; i--) {
+                            const j = Math.floor(Math.random() * (i + 1));
+                            [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+                        }
+                        isDerangement = true;
+                        for (let i = 0; i < currentArray.length; i++) {
+                            if (newArray[i] === currentArray[i]) {
+                                isDerangement = false;
+                                break;
+                            }
+                            if (originalArrayToAvoid && newArray[i] === originalArrayToAvoid[i]) {
+                                isDerangement = false;
+                                break;
+                            }
+                        }
+                        attempts++;
+                    }
+                    return newArray;
+                };
+
+                const steps = 5;
+                for (let step = 1; step <= steps; step++) {
+                    await new Promise(resolve => {
+                        const isLastStep = step === steps;
+                        const nextValues = getDerangement(currentValues, isLastStep ? originalValues : null);
+                        currentValues = nextValues;
+
+                        const applyFolhinhaShuffle = () => {
+                            if (targetRound === 0) {
+                                setBracketParticipants(prev => {
+                                    const updated = [...prev];
+                                    populatedIndices.forEach((slotIdx, i) => {
+                                        updated[slotIdx] = nextValues[i];
+                                    });
+                                    return updated;
+                                });
+                                setBracketAdvancements({});
+                            } else {
+                                setBracketAdvancements(prev => {
+                                    const updated = { ...prev };
+                                    populatedIndices.forEach((slotIdx, i) => {
+                                        updated[`${targetRound - 1}_${slotIdx}`] = nextValues[i];
+                                    });
+                                    Object.keys(updated).forEach(k => {
+                                        const [rIdx] = k.split('_').map(Number);
+                                        if (rIdx >= targetRound) {
+                                            delete updated[k];
+                                        }
+                                    });
+                                    return updated;
+                                });
+                            }
+                        };
+
+                        if (document.startViewTransition) {
+                            const transition = document.startViewTransition(() => {
+                                ReactDOM.flushSync(() => {
+                                    applyFolhinhaShuffle();
+                                });
+                            });
+                            transition.finished.then(() => {
+                                setTimeout(resolve, isLastStep ? 0 : 400);
+                            });
+                        } else {
+                            applyFolhinhaShuffle();
+                            setTimeout(resolve, 300);
+                        }
+                    });
+                }
             };
 
             const executeChaveamentoDraw = () => {
@@ -665,6 +966,45 @@
                     
                     setDrawnGroups(prev => [...prev, chosenIndex]);
                     setDrawnResultModal({ isOpen: true, result: chosenMcs, groupIndex: chosenIndex });
+                    
+                    // Joga pro modo folhinha automaticamente
+                    setBracketParticipants(prev => {
+                        if (prev.length < bracketSize) {
+                            const newParticipants = [...prev, chosenMcs];
+                            
+                            // Quando atinge o limite do tamanho da chave, remove os que não foram sorteados das boxes do modo chaveamento
+                            if (newParticipants.length === bracketSize) {
+                                const drawnMcIds = new Set(newParticipants.flat().map(mc => mc.id));
+                                
+                                setTimeout(() => {
+                                    setTrios(currentTrios => {
+                                        const newTrios = {};
+                                        const eliminated = [];
+                                        let newIdx = 0;
+                                        Object.keys(currentTrios).map(Number).sort((a,b)=>a-b).forEach(key => {
+                                            const group = currentTrios[key];
+                                            const isGroupDrawn = group.length > 0 && group.some(mc => drawnMcIds.has(mc.id));
+                                            if (isGroupDrawn) {
+                                                newTrios[newIdx] = group;
+                                                newIdx++;
+                                            } else if (group.length > 0) {
+                                                eliminated.push(group);
+                                            }
+                                        });
+                                        setLastEliminatedMcs(eliminated);
+                                        // Garante que todos os grupos que ficaram apareçam como já sorteados após a reindexação
+                                        setDrawnGroups(Object.keys(newTrios));
+                                        return newTrios;
+                                    });
+                                }, 0);
+                            }
+                            
+                            return newParticipants;
+                        } else {
+                            setWarning(`A Chave do Torneio (Folhinha) já está cheia (${bracketSize} vagas).`);
+                            return prev;
+                        }
+                    });
                 }
             };
 
@@ -762,61 +1102,328 @@
 
             const hasAnyGroupContent = Object.values(trios).some(group => group.length > 0);
 
+            // Criação visual e funcional da Folhinha (Bracket)
+            const renderBracket = () => {
+                const numRounds = Math.log2(bracketSize) + 1;
+                const rounds = [];
+
+                const isSameParticipant = (a, b) => {
+                    if (!a || !b || a.length !== b.length) return false;
+                    return a[0]?.id === b[0]?.id;
+                };
+
+                const advanceParticipant = (roundIndex, matchIndex, participantData, loserData) => {
+                    if (!participantData) return;
+
+                    let targetSlot = matchIndex;
+                    const nextRoundTotalSlots = bracketSize / Math.pow(2, roundIndex + 1);
+
+                    // Verifica se já está avançado na próxima fase
+                    let alreadyAdvancedKey = null;
+                    for (let s = 0; s < nextRoundTotalSlots; s++) {
+                        if (isSameParticipant(bracketAdvancements[`${roundIndex}_${s}`], participantData)) {
+                            alreadyAdvancedKey = `${roundIndex}_${s}`;
+                            break;
+                        }
+                    }
+
+                    if (alreadyAdvancedKey) return;
+
+                    // Se o oponente deste mesmo confronto estava avançado, substitui na mesma vaga; senão ocupa o próximo espaço sequencial disponível
+                    let loserSlot = -1;
+                    if (loserData) {
+                        for (let s = 0; s < nextRoundTotalSlots; s++) {
+                            if (isSameParticipant(bracketAdvancements[`${roundIndex}_${s}`], loserData)) {
+                                loserSlot = s;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (loserSlot !== -1) {
+                        targetSlot = loserSlot;
+                    } else if (bracketAdvancements[`${roundIndex}_${targetSlot}`]) {
+                        for (let s = 0; s < nextRoundTotalSlots; s++) {
+                            if (!bracketAdvancements[`${roundIndex}_${s}`]) {
+                                targetSlot = s;
+                                break;
+                            }
+                        }
+                    }
+
+                    setBracketAdvancements(prev => ({
+                        ...prev,
+                        [`${roundIndex}_${targetSlot}`]: participantData
+                    }));
+
+                    // Remove o MC/grupo perdedor do modo chaveamento
+                    if (loserData && loserData.length > 0) {
+                        const loserIds = new Set(loserData.map(mc => mc.id));
+                        setTrios(currentTrios => {
+                            const newTrios = {};
+                            let newIdx = 0;
+                            Object.keys(currentTrios).map(Number).sort((a,b)=>a-b).forEach(key => {
+                                const group = currentTrios[key];
+                                const remainingMcs = group.filter(mc => !loserIds.has(mc.id));
+                                if (remainingMcs.length > 0) {
+                                    newTrios[newIdx] = remainingMcs;
+                                    newIdx++;
+                                }
+                            });
+                            return newTrios;
+                        });
+                    }
+                };
+
+                const revertParticipantFromSlot = (roundIndex, slotIndex) => {
+                    if (roundIndex === 0) return false;
+                    const key = `${roundIndex - 1}_${slotIndex}`;
+                    const participant = bracketAdvancements[key];
+                    if (!participant) return false;
+
+                    // Verifica se este participante já avançou para fases posteriores; se não avançou, clicar nele remove e volta pra fase anterior
+                    const nextRoundSlots = bracketSize / Math.pow(2, roundIndex + 1);
+                    let advancedFurther = false;
+                    for (let s = 0; s < nextRoundSlots; s++) {
+                        if (isSameParticipant(bracketAdvancements[`${roundIndex}_${s}`], participant)) {
+                            advancedFurther = true;
+                            break;
+                        }
+                    }
+
+                    if (!advancedFurther) {
+                        setBracketAdvancements(prev => {
+                            const updated = { ...prev };
+                            delete updated[key];
+                            return updated;
+                        });
+                        return true;
+                    }
+                    return false;
+                };
+
+                for (let r = 0; r < numRounds; r++) {
+                    const isChampionRound = r === numRounds - 1;
+                    const numMatches = isChampionRound ? 1 : bracketSize / Math.pow(2, r + 1);
+                    const matches = [];
+
+                    for (let m = 0; m < numMatches; m++) {
+                        if (isChampionRound) {
+                            const champData = bracketAdvancements[`${r-1}_0`];
+                            matches.push(
+                                <div key={`champ-${m}`} className="flex flex-col justify-center my-2 relative z-10">
+                                    <div className="text-[10px] text-yellow-400 font-bold uppercase mb-1 text-center flex items-center justify-center gap-1"><Icon name="crown" size={12}/> Campeão</div>
+                                    <div 
+                                        onClick={() => {
+                                            if (champData) {
+                                                setBracketAdvancements(prev => {
+                                                    const updated = { ...prev };
+                                                    delete updated[`${r-1}_0`];
+                                                    return updated;
+                                                });
+                                            }
+                                        }}
+                                        title={champData ? "Clique para remover e voltar para a fase anterior" : ""}
+                                        className={`h-[50px] w-36 md:w-48 rounded-xl border-2 flex items-center justify-center px-3 shadow-lg transition-all ${champData ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400 cursor-pointer hover:scale-[1.02]' : 'bg-black/20 border-white/10 text-zinc-500 border-dashed'}`}
+                                    >
+                                        {champData ? <span className="font-bold truncate text-sm">{champData.map(mc=>mc.name).join(' / ')}</span> : <span className="text-[10px] uppercase font-semibold">Vazio</span>}
+                                    </div>
+                                </div>
+                            );
+                        } else {
+                            let p1Data = r === 0 ? (bracketParticipants[m * 2] || null) : (bracketAdvancements[`${r-1}_${m * 2}`] || null);
+                            let p2Data = r === 0 ? (bracketParticipants[m * 2 + 1] || null) : (bracketAdvancements[`${r-1}_${m * 2 + 1}`] || null);
+
+                            const nextRoundTotalSlots = bracketSize / Math.pow(2, r + 1);
+                            let p1Won = false;
+                            let p2Won = false;
+                            for (let s = 0; s < nextRoundTotalSlots; s++) {
+                                const adv = bracketAdvancements[`${r}_${s}`];
+                                if (adv) {
+                                    if (isSameParticipant(adv, p1Data)) p1Won = true;
+                                    if (isSameParticipant(adv, p2Data)) p2Won = true;
+                                }
+                            }
+                            const p1Lost = p2Won && p1Data !== null;
+                            const p2Lost = p1Won && p2Data !== null;
+
+                            const p1VtName = p1Data && p1Data[0] ? `folha-r${r}-${p1Data[0].id.toString().replace(/[^a-zA-Z0-9]/g, '')}` : undefined;
+                            const p2VtName = p2Data && p2Data[0] ? `folha-r${r}-${p2Data[0].id.toString().replace(/[^a-zA-Z0-9]/g, '')}` : undefined;
+
+                            let p1Style = 'bg-black/10 border-white/5 border-dashed text-zinc-600';
+                            if (p1Data) {
+                                if (p1Won) p1Style = 'bg-green-500/20 border-green-500 text-green-400 hover:bg-green-500/30 hover:scale-[1.02]';
+                                else if (p1Lost) p1Style = 'bg-red-500/20 border-red-500 text-red-400 red-mode-white hover:bg-red-500/30 hover:scale-[1.02]';
+                                else p1Style = 'bg-black/40 border-white/20 hover:border-red-500/50 text-zinc-100 hover:bg-white/10 hover:scale-[1.02]';
+                            }
+
+                            let p2Style = 'bg-black/10 border-white/5 border-dashed text-zinc-600';
+                            if (p2Data) {
+                                if (p2Won) p2Style = 'bg-green-500/20 border-green-500 text-green-400 hover:bg-green-500/30 hover:scale-[1.02]';
+                                else if (p2Lost) p2Style = 'bg-red-500/20 border-red-500 text-red-400 red-mode-white hover:bg-red-500/30 hover:scale-[1.02]';
+                                else p2Style = 'bg-black/40 border-white/20 hover:border-red-500/50 text-zinc-100 hover:bg-white/10 hover:scale-[1.02]';
+                            }
+
+                            matches.push(
+                                <div key={`match-${r}-${m}`} className="flex flex-col justify-center my-3 relative z-10">
+                                    <div className="flex flex-col gap-2 p-2 bg-black/20 border border-white/5 rounded-2xl relative shadow-md">
+                                        <div 
+                                            onClick={() => {
+                                                if (!p1Data) return;
+                                                if (r > 0 && !p1Won && !p1Lost && !p2Data) {
+                                                    revertParticipantFromSlot(r, m * 2);
+                                                    return;
+                                                }
+                                                if (p1Won) return;
+                                                advanceParticipant(r, m, p1Data, p2Data);
+                                            }}
+                                            onContextMenu={(e) => {
+                                                if (r > 0 && p1Data) {
+                                                    e.preventDefault();
+                                                    revertParticipantFromSlot(r, m * 2);
+                                                }
+                                            }}
+                                            style={p1VtName ? { viewTransitionName: p1VtName } : {}}
+                                            className={`h-[44px] w-36 md:w-48 rounded-xl border-2 flex items-center justify-between px-3 cursor-pointer transition-all ${p1Style}`}
+                                            title={p1Data ? (r > 0 && !p1Won && !p1Lost && !p2Data ? "Clique para remover e voltar para a fase anterior" : "Clique para avançar") : ""}
+                                        >
+                                            {p1Data ? (
+                                                <>
+                                                    <span className="font-semibold truncate text-[11px] md:text-xs">{p1Data.map(mc=>mc.name).join(' / ')}</span>
+                                                    {r > 0 && !p1Won && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                revertParticipantFromSlot(r, m * 2);
+                                                            }}
+                                                            className="ml-1 p-0.5 rounded-full hover:bg-red-500/30 text-zinc-400 hover:text-red-300 transition-colors"
+                                                            title="Voltar para a fase anterior"
+                                                        >
+                                                            <Icon name="x" size={12} />
+                                                        </button>
+                                                    )}
+                                                </>
+                                            ) : <span className="text-[9px] uppercase font-semibold">Aguardando</span>}
+                                        </div>
+                                        <div 
+                                            onClick={() => {
+                                                if (!p2Data) return;
+                                                if (r > 0 && !p2Won && !p2Lost && !p1Data) {
+                                                    revertParticipantFromSlot(r, m * 2 + 1);
+                                                    return;
+                                                }
+                                                if (p2Won) return;
+                                                advanceParticipant(r, m, p2Data, p1Data);
+                                            }}
+                                            onContextMenu={(e) => {
+                                                if (r > 0 && p2Data) {
+                                                    e.preventDefault();
+                                                    revertParticipantFromSlot(r, m * 2 + 1);
+                                                }
+                                            }}
+                                            style={p2VtName ? { viewTransitionName: p2VtName } : {}}
+                                            className={`h-[44px] w-36 md:w-48 rounded-xl border-2 flex items-center justify-between px-3 cursor-pointer transition-all ${p2Style}`}
+                                            title={p2Data ? (r > 0 && !p2Won && !p2Lost && !p1Data ? "Clique para remover e voltar para a fase anterior" : "Clique para avançar") : ""}
+                                        >
+                                            {p2Data ? (
+                                                <>
+                                                    <span className="font-semibold truncate text-[11px] md:text-xs">{p2Data.map(mc=>mc.name).join(' / ')}</span>
+                                                    {r > 0 && !p2Won && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                revertParticipantFromSlot(r, m * 2 + 1);
+                                                            }}
+                                                            className="ml-1 p-0.5 rounded-full hover:bg-red-500/30 text-zinc-400 hover:text-red-300 transition-colors"
+                                                            title="Voltar para a fase anterior"
+                                                        >
+                                                            <Icon name="x" size={12} />
+                                                        </button>
+                                                    )}
+                                                </>
+                                            ) : <span className="text-[9px] uppercase font-semibold">Aguardando</span>}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        }
+                    }
+
+                    rounds.push(
+                        <div key={`round-${r}`} className="flex flex-col justify-around h-full min-w-[180px] md:min-w-[220px] relative px-2">
+                            {rounds.length > 0 && r < numRounds && (
+                                <div className="absolute left-0 top-0 bottom-0 w-px bg-white/5 pointer-events-none"></div>
+                            )}
+                            {matches}
+                        </div>
+                    );
+                }
+
+                return (
+                    <div className="flex w-full h-[650px] overflow-x-auto overflow-y-auto apple-glass rounded-3xl p-4 md:p-6 custom-scrollbar">
+                        <div className="flex flex-row h-full min-w-max pb-4">
+                            {rounds}
+                        </div>
+                    </div>
+                );
+            };
+
             return (
                 <div className="min-h-screen p-4 md:p-8 pb-20 relative z-10 flex flex-col justify-between">
                     <div>
                         <header className="mb-12 text-center flex flex-col items-center justify-center space-y-4 relative z-10 mt-4">
                             
-                            {/* Seletores no Topo Esquerdo (Modo Mobile Expansível) */}
-                            <div className="absolute top-0 left-0 flex flex-col gap-3 items-start z-30">
+                            {/* Seletores no Topo Esquerdo */}
+                            <div className="absolute top-0 left-0 flex flex-col gap-2 items-start z-30">
                                 
-                                {/* Seletor de Tema Mobile Expansível */}
-                                <div 
-                                    className="apple-btn rounded-full p-1 flex items-center gap-1 cursor-pointer overflow-hidden transition-all duration-300 shadow-lg"
-                                    onClick={() => !isThemeExpanded && setIsThemeExpanded(true)}
-                                >
+                                {/* Seletor de Tema */}
+                                <div className="apple-btn rounded-full p-0.5 flex items-center gap-0.5 transition-all duration-300 shadow-lg">
                                     <button 
-                                        onClick={(e) => { e.stopPropagation(); setTheme('dark'); setIsThemeExpanded(false); }}
-                                        className={`w-9 h-8 rounded-full flex items-center justify-center transition-all duration-300 theme-selector-btn ${theme === 'dark' ? 'bg-white text-black shadow-md' : 'text-zinc-300 hover:text-white'} ${!isThemeExpanded && theme !== 'dark' ? 'hidden sm:flex' : 'flex'}`}
+                                        onClick={() => setTheme('dark')}
+                                        className={`w-9 h-7 rounded-full flex items-center justify-center transition-all duration-300 theme-selector-btn ${theme === 'dark' ? 'bg-white text-black shadow-md' : 'text-zinc-300 hover:text-white'}`}
                                         title="Modo Escuro"
                                     >
                                         <Icon name="moon" size={14} />
                                     </button>
                                     <button 
-                                        onClick={(e) => { e.stopPropagation(); setTheme('light'); setIsThemeExpanded(false); }}
-                                        className={`w-9 h-8 rounded-full flex items-center justify-center transition-all duration-300 theme-selector-btn ${theme === 'light' ? 'bg-white text-black shadow-md' : 'text-zinc-300 hover:text-white'} ${!isThemeExpanded && theme !== 'light' ? 'hidden sm:flex' : 'flex'}`}
+                                        onClick={() => setTheme('light')}
+                                        className={`w-9 h-7 rounded-full flex items-center justify-center transition-all duration-300 theme-selector-btn ${theme === 'light' ? 'bg-white text-black shadow-md' : 'text-zinc-300 hover:text-white'}`}
                                         title="Modo Claro"
                                     >
                                         <Icon name="sun" size={14} />
                                     </button>
                                     <button 
-                                        onClick={(e) => { e.stopPropagation(); setTheme('red'); setIsThemeExpanded(false); }}
-                                        className={`w-9 h-8 rounded-full flex items-center justify-center transition-all duration-300 theme-selector-btn ${theme === 'red' ? 'bg-white text-black shadow-md' : 'text-zinc-300 hover:text-white'} ${!isThemeExpanded && theme !== 'red' ? 'hidden sm:flex' : 'flex'}`}
+                                        onClick={() => setTheme('red')}
+                                        className={`w-9 h-7 rounded-full flex items-center justify-center transition-all duration-300 theme-selector-btn ${theme === 'red' ? 'bg-white text-black shadow-md' : 'text-zinc-300 hover:text-white'}`}
                                         title="Modo Vermelho"
                                     >
                                         <Icon name="flame" size={14} />
                                     </button>
                                 </div>
 
-                                {/* Seletor de Modo Mobile Expansível */}
+                                {/* Seletor de Modo */}
                                 <div className="flex flex-col items-start w-max">
-                                    <div 
-                                        className="apple-btn rounded-full p-1 flex items-center gap-1 cursor-pointer overflow-hidden transition-all duration-300 shadow-lg"
-                                        onClick={() => !isModeExpanded && setIsModeExpanded(true)}
-                                    >
+                                    <div className="apple-btn rounded-full p-0.5 flex items-center gap-0.5 transition-all duration-300 shadow-lg">
                                         <button 
-                                            onClick={(e) => { e.stopPropagation(); handleModeSwitchRequest('draft'); setIsModeExpanded(false); }}
-                                            className={`w-12 h-8 rounded-full flex items-center justify-center transition-all duration-300 theme-selector-btn ${appMode === 'draft' ? 'bg-white text-black shadow-md' : 'text-zinc-300 hover:text-white'} ${!isModeExpanded && appMode !== 'draft' ? 'hidden sm:flex' : 'flex'}`}
+                                            onClick={() => handleModeSwitchRequest('draft')}
+                                            className={`w-9 h-7 rounded-full flex items-center justify-center transition-all duration-300 theme-selector-btn ${appMode === 'draft' ? 'bg-white text-black shadow-md' : 'text-zinc-300 hover:text-white'}`}
                                             title="Modo Draft"
                                         >
                                             <Icon name="list" size={14} />
                                         </button>
                                         <button 
-                                            onClick={(e) => { e.stopPropagation(); handleModeSwitchRequest('chaveamento'); setIsModeExpanded(false); }}
-                                            className={`w-12 h-8 rounded-full flex items-center justify-center transition-all duration-300 theme-selector-btn ${appMode === 'chaveamento' ? 'bg-white text-black shadow-md' : 'text-zinc-300 hover:text-white'} ${!isModeExpanded && appMode !== 'chaveamento' ? 'hidden sm:flex' : 'flex'}`}
+                                            onClick={() => handleModeSwitchRequest('chaveamento')}
+                                            className={`w-9 h-7 rounded-full flex items-center justify-center transition-all duration-300 theme-selector-btn ${appMode === 'chaveamento' ? 'bg-white text-black shadow-md' : 'text-zinc-300 hover:text-white'}`}
                                             title="Modo Chaveamento"
                                         >
                                             <Icon name="swords" size={14} />
+                                        </button>
+                                        <button 
+                                            onClick={() => handleModeSwitchRequest('folhinha')}
+                                            className={`w-9 h-7 rounded-full flex items-center justify-center transition-all duration-300 theme-selector-btn ${appMode === 'folhinha' ? 'bg-white text-black shadow-md' : 'text-zinc-300 hover:text-white'}`}
+                                            title="Modo Folhinha"
+                                        >
+                                            <Icon name="file-edit" size={14} />
                                         </button>
                                     </div>
                                     <button 
@@ -831,8 +1438,10 @@
                                         <div className="mt-2 apple-glass p-3 rounded-2xl max-w-[260px] text-left text-[11px] text-zinc-300 leading-relaxed shadow-xl z-30 animate-modal-pop">
                                             {appMode === 'draft' ? (
                                                 <p><strong>Modo Draft:</strong> Nesse modo você pode adicionar todos os mc's participantes, definir os capitães e sortear a ordem de escolhas dos integrantes. Feito para facilitar a escolha dos grupos de forma fluida e simples.</p>
-                                            ) : (
+                                            ) : appMode === 'chaveamento' ? (
                                                 <p><strong>Modo Chaveamento:</strong> Nesse modo você pode adicionar todos os mc's (basta clicar no nome deles para auto-adicionar nas caixas) e sortear a ordem individual dos confrontos. Feito para sortear a ordem de confrontos de uma batalha, assim dispensando utilização sorteio no papel ou em sites externos.</p>
+                                            ) : (
+                                                <p><strong>Modo Folhinha:</strong> Visualize a chave do torneio. Os MCs/Grupos sorteados no Modo Chaveamento são adicionados automaticamente aqui. Clique nos vencedores para avançá-los na chave até a final!</p>
                                             )}
                                         </div>
                                     )}
@@ -911,7 +1520,7 @@
                                     className="apple-btn px-6 h-10 rounded-full font-semibold tracking-wide text-xs flex items-center justify-center gap-2 transition-all cursor-pointer hover:scale-105"
                                 >
                                     <Icon name="shuffle" size={16} />
-                                    {appMode === 'chaveamento' ? 'Sortear Confronto' : 'Sortear Ordem'}
+                                    {appMode === 'chaveamento' || appMode === 'folhinha' ? 'Sortear Confronto' : 'Sortear Ordem'}
                                 </button>
 
                                 <button 
@@ -943,222 +1552,256 @@
                             </div>
                         )}
 
-                        <div className="max-w-[1400px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8 relative z-10">
-                            
-                            <div className="lg:col-span-4 flex flex-col h-auto lg:h-[calc(100vh-320px)]">
-                                <div 
-                                    className="trio-tilt-card apple-glass rounded-3xl flex flex-col h-full overflow-hidden"
-                                    onMouseMove={handleCardMouseMove}
-                                    onMouseLeave={handleCardMouseLeave}
-                                >
-                                    <div className="p-4 bg-black/10 border-b border-white/10 flex items-center justify-between">
-                                        <h2 className="text-sm font-semibold flex items-center gap-2 text-zinc-100 tracking-tight">
-                                            <Icon name="users" size={16} className="text-red-500 mc-list-header-icon" />
-                                            Lista de MC's
+                        {appMode === 'folhinha' ? (
+                            <div className="max-w-[1400px] w-full mx-auto relative z-10">
+                                <div className="flex flex-col gap-4 animate-modal-pop w-full">
+                                    <div className="flex flex-wrap justify-between items-center gap-3 mb-2 px-4">
+                                        <h2 className="text-xl font-unbounded font-bold text-white flex items-center gap-2">
+                                            <Icon name="file-edit" size={24} className="text-red-500 red-mode-white"/>
+                                            Chave do Torneio
                                         </h2>
-                                        
-                                        <div className="flex items-center gap-2">
-                                            <button 
-                                                onClick={handleCopyMCs}
-                                                className="h-9 min-w-[44px] px-3.5 bg-white/10 hover:bg-white/20 border border-white/10 rounded-full text-zinc-300 hover:text-white transition-colors cursor-pointer flex items-center justify-center shadow-sm"
-                                                title="Copiar Lista Numerada e Compartilhar"
-                                            >
-                                                <Icon name="copy" size={16} />
-                                            </button>
-                                            <span className="h-9 min-w-[44px] px-3.5 bg-white/10 border border-white/10 text-zinc-200 text-sm font-semibold rounded-full shadow-sm flex items-center justify-center">
-                                                {sortedAvailableMCs.length}
+                                        <div className="flex items-center gap-2 sm:gap-3">
+                                            <span className="text-xs font-semibold text-zinc-400 bg-black/20 px-3 py-1.5 rounded-full border border-white/10">
+                                                {bracketParticipants.length} / {bracketSize} Sorteados
                                             </span>
+                                            <button 
+                                                onClick={handleExportBracket}
+                                                className="apple-btn px-4 py-1.5 rounded-full text-xs font-semibold text-zinc-200 hover:text-white flex items-center gap-1.5 transition-all cursor-pointer"
+                                                title="Copiar e compartilhar toda a chave da batalha"
+                                            >
+                                                <Icon name="share-2" size={14} />
+                                                Exportar chave
+                                            </button>
+                                            <button 
+                                                onClick={() => setConfirmClearBracket(true)}
+                                                className="apple-btn px-4 py-1.5 rounded-full text-xs font-semibold text-red-400 hover:text-red-300 red-mode-white flex items-center gap-1 transition-all cursor-pointer"
+                                            >
+                                                <Icon name="trash-2" size={14} />
+                                                Limpar
+                                            </button>
                                         </div>
                                     </div>
-
-                                    <div className="p-4 border-b border-white/10">
-                                        <form onSubmit={handleAddMc} className="flex gap-2">
-                                            <input
-                                                type="text"
-                                                placeholder="Adicionar novo MC..."
-                                                value={newMcName}
-                                                onChange={(e) => setNewMcName(e.target.value)}
-                                                className="w-full bg-black/20 border border-white/20 rounded-full px-4 py-2.5 text-sm font-medium focus:outline-none focus:border-red-500/50 focus:ring-1 focus:ring-red-500/50 text-zinc-100 transition-all placeholder:text-zinc-400 shadow-inner"
-                                            />
-                                            <button 
-                                                type="submit"
-                                                disabled={!newMcName.trim()}
-                                                className="bg-red-600 hover:bg-red-500 text-white w-10 h-10 rounded-full transition-colors cursor-pointer shadow-md shadow-red-600/20 flex-shrink-0 flex items-center justify-center add-mc-btn"
-                                            >
-                                                <Icon name="plus" size={18} />
-                                            </button>
-                                        </form>
-                                    </div>
-
-                                    <div 
-                                        className={`flex-1 p-4 overflow-y-auto content-start flex flex-wrap gap-2.5 transition-colors ${
-                                            draggingOverId === 'available' ? 'bg-white/5 ring-2 ring-inset ring-red-500/40' : ''
-                                        }`}
-                                        onDragOver={(e) => handleDragOver(e, 'available')}
-                                        onDragLeave={handleDragLeave}
-                                        onDrop={(e) => handleDrop(e, 'available')}
-                                    >
-                                        {sortedAvailableMCs.length === 0 ? (
-                                            <div className="w-full h-40 flex flex-col items-center justify-center text-zinc-400 space-y-3 opacity-80">
-                                                <Icon name="mic-2" size={32} strokeWidth={1.5} />
-                                                <p className="text-xs font-medium text-center tracking-wide">Lista Vazia</p>
-                                            </div>
-                                        ) : (
-                                            sortedAvailableMCs.map((mc) => (
-                                                <div
-                                                    key={mc.id}
-                                                    draggable
-                                                    onDragStart={(e) => handleDragStart(e, mc, 'available')}
-                                                    onClick={() => appMode === 'chaveamento' ? handleAutoAssign(mc) : null}
-                                                    style={{ viewTransitionName: `mc-${mc.id.toString().replace(/[^a-zA-Z0-9]/g, '')}` }}
-                                                    className="group flex items-center gap-1.5 px-3.5 py-1.5 bg-black/20 border border-white/10 rounded-full cursor-pointer hover:border-red-500/50 hover:bg-black/30 hover:shadow-md transition-all backdrop-blur-sm"
-                                                    title={appMode === 'chaveamento' ? "Clique para enviar para a chave" : "Arraste para formar o grupo"}
-                                                >
-                                                    <Icon name="mic-2" size={12} className="text-zinc-300 group-hover:text-red-400 transition-colors" />
-                                                    <span className="font-semibold text-[15px] text-zinc-100 whitespace-nowrap tracking-tight">{mc.name}</span>
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setAvailableMCs(prev => prev.filter(m => m.id !== mc.id));
-                                                        }}
-                                                        className="opacity-0 group-hover:opacity-100 ml-1 p-0.5 rounded-full hover:bg-red-500 hover:text-white text-zinc-400 transition-all cursor-pointer"
-                                                        title="Excluir MC da lista"
-                                                    >
-                                                        <Icon name="x" size={12} />
-                                                    </button>
-                                                </div>
-                                            ))
-                                        )}
-                                    </div>
+                                    {renderBracket()}
                                 </div>
                             </div>
-
-                            <div className="lg:col-span-8">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 md:gap-6 h-full content-start pb-10">
-                                    {Object.keys(trios).map((trioIndex) => {
-                                        const numIndex = parseInt(trioIndex);
-                                        const trioMCs = trios[numIndex];
-                                        const count = trioMCs.length;
-                                        const isOver = draggingOverId === numIndex;
-                                        const isComplete = count >= configGroupSize;
-
-                                        let glassClass = 'apple-glass';
-                                        if (count > 0 && !isComplete) glassClass = 'apple-glass-yellow';
-                                        if (isComplete) glassClass = 'apple-glass-green';
-
-                                        const boxMinHeight = configGroupSize === 1 ? 'min-h-[80px]' : 'min-h-[160px]';
-
-                                        return (
-                                            <div
-                                                key={trioIndex}
-                                                onDragOver={(e) => handleDragOver(e, numIndex)}
-                                                onDragLeave={handleDragLeave}
-                                                onDrop={(e) => handleDrop(e, numIndex)}
-                                                onMouseMove={handleCardMouseMove}
-                                                onMouseLeave={handleCardMouseLeave}
-                                                className={`trio-tilt-card relative flex flex-col rounded-3xl ${glassClass} ${
-                                                    isOver ? 'ring-2 ring-red-500/50 scale-[1.02] bg-white/10' : ''
-                                                }`}
-                                            >
-                                                <div className="p-3.5 border-b border-white/10 flex justify-between items-center bg-black/10 rounded-t-3xl">
-                                                    <h3 className="font-semibold text-sm text-zinc-100 tracking-tight">{getGroupName()} {numIndex + 1}</h3>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className={`text-[10px] font-semibold px-2 py-1 rounded-full ${
-                                                            isComplete ? 'badge-complete' : 'bg-black/20 text-zinc-300 border border-white/10'
-                                                        }`}>
-                                                            {count}/{configGroupSize}
-                                                        </span>
-                                                        <button 
-                                                            onClick={() => setConfirmTrioRemoval({ isOpen: true, trioId: trioIndex })}
-                                                            className="p-1 rounded-full text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
-                                                            title={`Remover ${getGroupName()}`}
-                                                        >
-                                                            <Icon name="x" size={14} />
-                                                        </button>
-                                                    </div>
-                                                </div>
-
-                                                <div className={`p-2.5 flex-1 flex flex-col gap-2 ${boxMinHeight}`}>
-                                                    {trioMCs.map((mc, index) => {
-                                                        const isCaptain = index === 0 && configGroupSize > 1 && appMode === 'draft';
-                                                        return (
-                                                            <div
-                                                                key={mc.id}
-                                                                draggable
-                                                                onDragStart={(e) => handleDragStart(e, mc, trioIndex)}
-                                                                onClick={() => requestRemoval(mc, numIndex, index)}
-                                                                style={{ viewTransitionName: `mc-${mc.id.toString().replace(/[^a-zA-Z0-9]/g, '')}` }}
-                                                                title="Clique para remover"
-                                                                className={`group relative overflow-hidden flex items-center p-2.5 h-[50px] rounded-full cursor-pointer transition-all shadow-sm ${
-                                                                    isCaptain 
-                                                                        ? 'bg-gradient-to-r from-yellow-400/30 to-transparent border-2 border-yellow-400/50 hover:border-red-500/50 hover:bg-red-500/10' 
-                                                                        : 'bg-black/10 border-2 border-white/10 hover:border-red-500/50 hover:bg-red-500/10'
-                                                                }`}
-                                                            >
-                                                                <div className="flex-1 flex items-center gap-2.5 relative z-10 w-full overflow-hidden">
-                                                                    <div className={`w-7 h-7 shrink-0 rounded-full flex items-center justify-center border ${
-                                                                        isCaptain ? 'bg-yellow-400/20 border-yellow-400/40 text-yellow-300' : 'bg-black/20 border-white/20 text-zinc-300'
-                                                                    }`}>
-                                                                        <Icon name={isCaptain ? "crown" : "mic-2"} size={12} />
-                                                                    </div>
-                                                                    <span className={`text-[15px] font-semibold truncate tracking-tight ${
-                                                                        isCaptain ? 'text-yellow-300' : 'text-zinc-100'
-                                                                    }`}>
-                                                                        {mc.name}
-                                                                    </span>
-                                                                </div>
-                                                                <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-red-600 rounded-full w-7 h-7 flex items-center justify-center absolute right-2 z-10 shadow-sm">
-                                                                    <Icon name="x" size={12} className="text-white" />
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-
-                                                    {Array.from({ length: Math.max(0, configGroupSize - count) }).map((_, i) => {
-                                                        const isCaptainSlot = count === 0 && i === 0 && appMode === 'draft';
-                                                        return (
-                                                            <div 
-                                                                key={`empty-${i}`} 
-                                                                className={`w-full h-[50px] shrink-0 border-2 border-dashed rounded-full flex flex-col items-center justify-center transition-colors ${
-                                                                    isCaptainSlot && configGroupSize > 1
-                                                                        ? 'border-yellow-400/60 bg-yellow-400/20' 
-                                                                        : 'border-white/20 bg-black/5 empty-regular-box'
-                                                                }`}
-                                                            >
-                                                                <span className={`text-[11px] font-semibold tracking-wide ${
-                                                                    isCaptainSlot && configGroupSize > 1 ? 'empty-captain-text text-yellow-300/80' : 'empty-regular-text text-zinc-400'
-                                                                }`}>
-                                                                    {isCaptainSlot ? 'Espaço Capitão' : (configGroupSize === 1 ? 'Espaço MC' : 'Espaço Vazio')}
-                                                                </span>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-
-                                    <button 
-                                        onClick={handleAddTrio}
-                                        className="trio-tilt-card relative flex flex-col rounded-3xl border-2 border-dashed border-white/20 apple-glass hover:bg-white/20 hover:border-white/40 transition-all min-h-[220px] items-center justify-center group cursor-pointer"
+                        ) : (
+                            <div className="max-w-[1400px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8 relative z-10">
+                                
+                                <div className="lg:col-span-4 flex flex-col h-auto lg:h-[calc(100vh-320px)]">
+                                    <div 
+                                        className="trio-tilt-card apple-glass rounded-3xl flex flex-col h-full overflow-hidden"
                                         onMouseMove={handleCardMouseMove}
                                         onMouseLeave={handleCardMouseLeave}
                                     >
-                                        <div className="w-14 h-14 rounded-full bg-black/20 border border-white/20 flex items-center justify-center group-hover:bg-black/30 group-hover:scale-105 transition-all shadow-sm">
-                                            <Icon name="plus" size={24} className="text-zinc-300 group-hover:text-white transition-colors" />
+                                        <div className="p-4 bg-black/10 border-b border-white/10 flex items-center justify-between">
+                                            <h2 className="text-sm font-semibold flex items-center gap-2 text-zinc-100 tracking-tight">
+                                                <Icon name="users" size={16} className="text-red-500 mc-list-header-icon" />
+                                                Lista de MC's
+                                            </h2>
+                                            
+                                            <div className="flex items-center gap-2">
+                                                <button 
+                                                    onClick={handleCopyMCs}
+                                                    className="h-9 min-w-[44px] px-3.5 bg-white/10 hover:bg-white/20 border border-white/10 rounded-full text-zinc-300 hover:text-white transition-colors cursor-pointer flex items-center justify-center shadow-sm"
+                                                    title="Copiar Lista Numerada e Compartilhar"
+                                                >
+                                                    <Icon name="copy" size={16} />
+                                                </button>
+                                                <span className="h-9 min-w-[44px] px-3.5 bg-white/10 border border-white/10 text-zinc-200 text-sm font-semibold rounded-full shadow-sm flex items-center justify-center">
+                                                    {sortedAvailableMCs.length}
+                                                </span>
+                                            </div>
                                         </div>
-                                        <span className="text-zinc-300 font-semibold mt-4 tracking-wide text-xs group-hover:text-white transition-colors">
-                                            Adicionar {getGroupName()}
-                                        </span>
-                                    </button>
+
+                                        <div className="p-4 border-b border-white/10">
+                                            <form onSubmit={handleAddMc} className="flex gap-2">
+                                                <input
+                                                    type="text"
+                                                    placeholder="Adicionar novo MC..."
+                                                    value={newMcName}
+                                                    onChange={(e) => setNewMcName(e.target.value)}
+                                                    className="w-full bg-black/20 border border-white/20 rounded-full px-4 py-2.5 text-sm font-medium focus:outline-none focus:border-red-500/50 focus:ring-1 focus:ring-red-500/50 text-zinc-100 transition-all placeholder:text-zinc-400 shadow-inner"
+                                                />
+                                                <button 
+                                                    type="submit"
+                                                    disabled={!newMcName.trim()}
+                                                    className="bg-red-600 hover:bg-red-500 text-white w-10 h-10 rounded-full transition-colors cursor-pointer shadow-md shadow-red-600/20 flex-shrink-0 flex items-center justify-center add-mc-btn"
+                                                >
+                                                    <Icon name="plus" size={18} />
+                                                </button>
+                                            </form>
+                                        </div>
+
+                                        <div 
+                                            className={`flex-1 p-4 overflow-y-auto content-start flex flex-wrap gap-2.5 transition-colors ${
+                                                draggingOverId === 'available' ? 'bg-white/5 ring-2 ring-inset ring-red-500/40' : ''
+                                            }`}
+                                            onDragOver={(e) => handleDragOver(e, 'available')}
+                                            onDragLeave={handleDragLeave}
+                                            onDrop={(e) => handleDrop(e, 'available')}
+                                        >
+                                            {sortedAvailableMCs.length === 0 ? (
+                                                <div className="w-full h-40 flex flex-col items-center justify-center text-zinc-400 space-y-3 opacity-80">
+                                                    <Icon name="mic-2" size={32} strokeWidth={1.5} />
+                                                    <p className="text-xs font-medium text-center tracking-wide">Lista Vazia</p>
+                                                </div>
+                                            ) : (
+                                                sortedAvailableMCs.map((mc) => (
+                                                    <div
+                                                        key={mc.id}
+                                                        draggable
+                                                        onDragStart={(e) => handleDragStart(e, mc, 'available')}
+                                                        onClick={() => appMode === 'chaveamento' ? handleAutoAssign(mc) : null}
+                                                        style={{ viewTransitionName: `mc-${mc.id.toString().replace(/[^a-zA-Z0-9]/g, '')}` }}
+                                                        className="group flex items-center gap-1.5 px-3.5 py-1.5 bg-black/20 border border-white/10 rounded-full cursor-pointer hover:border-red-500/50 hover:bg-black/30 hover:shadow-md transition-all backdrop-blur-sm"
+                                                        title={appMode === 'chaveamento' ? "Clique para enviar para a chave" : "Arraste para formar o grupo"}
+                                                    >
+                                                        <Icon name="mic-2" size={12} className="text-zinc-300 group-hover:text-red-400 transition-colors" />
+                                                        <span className="font-semibold text-[15px] text-zinc-100 whitespace-nowrap tracking-tight">{mc.name}</span>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setAvailableMCs(prev => prev.filter(m => m.id !== mc.id));
+                                                            }}
+                                                            className="opacity-0 group-hover:opacity-100 ml-1 p-0.5 rounded-full hover:bg-red-500 hover:text-white text-zinc-400 transition-all cursor-pointer"
+                                                            title="Excluir MC da lista"
+                                                        >
+                                                            <Icon name="x" size={12} />
+                                                        </button>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="lg:col-span-8">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 md:gap-6 h-full content-start pb-10">
+                                        {Object.keys(trios).map((trioIndex) => {
+                                            const numIndex = parseInt(trioIndex);
+                                            const trioMCs = trios[numIndex];
+                                            const count = trioMCs.length;
+                                            const isOver = draggingOverId === numIndex;
+                                            const isComplete = count >= configGroupSize;
+
+                                            let glassClass = 'apple-glass';
+                                            if (count > 0 && !isComplete) glassClass = 'apple-glass-yellow';
+                                            if (isComplete) glassClass = 'apple-glass-green';
+
+                                            const boxMinHeight = configGroupSize === 1 ? 'min-h-[80px]' : 'min-h-[160px]';
+
+                                            return (
+                                                <div
+                                                    key={trioIndex}
+                                                    onDragOver={(e) => handleDragOver(e, numIndex)}
+                                                    onDragLeave={handleDragLeave}
+                                                    onDrop={(e) => handleDrop(e, numIndex)}
+                                                    onMouseMove={handleCardMouseMove}
+                                                    onMouseLeave={handleCardMouseLeave}
+                                                    className={`trio-tilt-card relative flex flex-col rounded-3xl ${glassClass} ${
+                                                        isOver ? 'ring-2 ring-red-500/50 scale-[1.02] bg-white/10' : ''
+                                                    }`}
+                                                >
+                                                    <div className="p-3.5 border-b border-white/10 flex justify-between items-center bg-black/10 rounded-t-3xl">
+                                                        <h3 className="font-semibold text-sm text-zinc-100 tracking-tight">{getGroupName()} {numIndex + 1}</h3>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className={`text-[10px] font-semibold px-2 py-1 rounded-full ${
+                                                                isComplete ? 'badge-complete' : 'bg-black/20 text-zinc-300 border border-white/10'
+                                                            }`}>
+                                                                {count}/{configGroupSize}
+                                                            </span>
+                                                            <button 
+                                                                onClick={() => setConfirmTrioRemoval({ isOpen: true, trioId: trioIndex })}
+                                                                className="p-1 rounded-full text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
+                                                                title={`Remover ${getGroupName()}`}
+                                                            >
+                                                                <Icon name="x" size={14} />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className={`p-2.5 flex-1 flex flex-col gap-2 ${boxMinHeight}`}>
+                                                        {trioMCs.map((mc, index) => {
+                                                            const isCaptain = index === 0 && configGroupSize > 1 && appMode === 'draft';
+                                                            return (
+                                                                <div
+                                                                    key={mc.id}
+                                                                    draggable
+                                                                    onDragStart={(e) => handleDragStart(e, mc, trioIndex)}
+                                                                    onClick={() => requestRemoval(mc, numIndex, index)}
+                                                                    style={{ viewTransitionName: `mc-${mc.id.toString().replace(/[^a-zA-Z0-9]/g, '')}` }}
+                                                                    title="Clique para remover"
+                                                                    className={`group relative overflow-hidden flex items-center p-2.5 h-[50px] rounded-full cursor-pointer transition-all shadow-sm ${
+                                                                        isCaptain 
+                                                                            ? 'bg-gradient-to-r from-yellow-400/30 to-transparent border-2 border-yellow-400/50 hover:border-red-500/50 hover:bg-red-500/10' 
+                                                                            : 'bg-black/10 border-2 border-white/10 hover:border-red-500/50 hover:bg-red-500/10'
+                                                                    }`}
+                                                                >
+                                                                    <div className="flex-1 flex items-center gap-2.5 relative z-10 w-full overflow-hidden">
+                                                                        <div className={`w-7 h-7 shrink-0 rounded-full flex items-center justify-center border ${
+                                                                            isCaptain ? 'bg-yellow-400/20 border-yellow-400/40 text-yellow-300' : 'bg-black/20 border-white/20 text-zinc-300'
+                                                                        }`}>
+                                                                            <Icon name={isCaptain ? "crown" : "mic-2"} size={12} />
+                                                                        </div>
+                                                                        <span className={`text-[15px] font-semibold truncate tracking-tight ${
+                                                                            isCaptain ? 'text-yellow-300' : 'text-zinc-100'
+                                                                        }`}>
+                                                                            {mc.name}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-red-600 rounded-full w-7 h-7 flex items-center justify-center absolute right-2 z-10 shadow-sm">
+                                                                        <Icon name="x" size={12} className="text-white" />
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+
+                                                        {Array.from({ length: Math.max(0, configGroupSize - count) }).map((_, i) => {
+                                                            const isCaptainSlot = count === 0 && i === 0 && appMode === 'draft';
+                                                            return (
+                                                                <div 
+                                                                    key={`empty-${i}`} 
+                                                                    className={`w-full h-[50px] shrink-0 border-2 border-dashed rounded-full flex flex-col items-center justify-center transition-colors ${
+                                                                        isCaptainSlot && configGroupSize > 1
+                                                                            ? 'border-yellow-400/60 bg-yellow-400/20' 
+                                                                            : 'border-white/20 bg-black/5 empty-regular-box'
+                                                                    }`}
+                                                                >
+                                                                    <span className={`text-[11px] font-semibold tracking-wide ${
+                                                                        isCaptainSlot && configGroupSize > 1 ? 'empty-captain-text text-yellow-300/80' : 'empty-regular-text text-zinc-400'
+                                                                    }`}>
+                                                                        {isCaptainSlot ? 'Espaço Capitão' : (configGroupSize === 1 ? 'Espaço MC' : 'Espaço Vazio')}
+                                                                    </span>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+
+                                        <button 
+                                            onClick={handleAddTrio}
+                                            className="trio-tilt-card relative flex flex-col rounded-3xl border-2 border-dashed border-white/20 apple-glass hover:bg-white/20 hover:border-white/40 transition-all min-h-[220px] items-center justify-center group cursor-pointer"
+                                            onMouseMove={handleCardMouseMove}
+                                            onMouseLeave={handleCardMouseLeave}
+                                        >
+                                            <div className="w-14 h-14 rounded-full bg-black/20 border border-white/20 flex items-center justify-center group-hover:bg-black/30 group-hover:scale-105 transition-all shadow-sm">
+                                                <Icon name="plus" size={24} className="text-zinc-300 group-hover:text-white transition-colors" />
+                                            </div>
+                                            <span className="text-zinc-300 font-semibold mt-4 tracking-wide text-xs group-hover:text-white transition-colors">
+                                                Adicionar {getGroupName()}
+                                            </span>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        )}
                     </div>
 
                     <footer className="mt-12 text-center text-xs text-zinc-400 relative z-10 py-6 border-t border-white/10 font-medium tracking-wide">
                         <p>Criado por Vitor Carvalho. Sugestões? Fale comigo no instagram: <a href="https://www.instagram.com/ovitorcarvalho/" target="_blank" rel="noopener noreferrer" className="text-red-500 hover:text-red-400 hover:underline transition-colors">@ovitorcarvalho</a></p>
-                        <p className="mt-2 text-[10px] opacity-60">Versão 2.1</p>
+                        <p className="mt-2 text-[10px] opacity-40">Versão 3.0</p>
                     </footer>
                     
                     {confirmDialog.isOpen && (
@@ -1219,7 +1862,7 @@
                                     <Icon name="shuffle" size={32} className="shuffle-icon animate-pulse" strokeWidth={1.5} />
                                 </div>
                                 <h2 className="shuffle-title text-xl md:text-3xl font-unbounded font-bold uppercase tracking-tight mb-4 md:mb-8 animate-pulse">
-                                    {appMode === 'chaveamento' ? 'Sorteando Confronto' : 'Sorteando a Ordem'}
+                                    {appMode === 'chaveamento' || appMode === 'folhinha' ? 'Sorteando Confronto' : 'Sorteando a Ordem'}
                                 </h2>
                                 <div className="shuffle-countdown font-unbounded font-bold uppercase text-[70px] sm:text-[100px] md:text-[150px] leading-none drop-shadow-lg">
                                     {countdown}
@@ -1235,7 +1878,7 @@
                                     <Icon name="alert-triangle" size={32} strokeWidth={1.5} />
                                 </div>
                                 <h2 className="text-xl font-semibold tracking-tight text-zinc-100">Trocar de Modo?</h2>
-                                <p className="text-sm text-zinc-300 mt-3 leading-relaxed">Você está prestes a trocar para o <strong className="text-white">Modo {confirmModeSwitch.targetMode === 'draft' ? 'Draft' : 'Chaveamento'}</strong>. Ao fazer isso, <strong className="text-red-400">todo o progresso atual será perdido</strong>.</p>
+                                <p className="text-sm text-zinc-300 mt-3 leading-relaxed">Você está prestes a trocar para o <strong className="text-white">Modo {confirmModeSwitch.targetMode === 'draft' ? 'Draft' : confirmModeSwitch.targetMode === 'folhinha' ? 'Folhinha' : 'Chaveamento'}</strong>. Ao fazer isso, <strong className="text-always-red font-bold text-red-400">todo o progresso atual será perdido</strong>.</p>
                                 
                                 <div className="flex gap-3 w-full mt-8">
                                     <button onClick={() => setConfirmModeSwitch({ isOpen: false, targetMode: null })} className="flex-1 py-3.5 bg-white/10 hover:bg-white/20 text-zinc-100 text-sm font-semibold rounded-2xl cursor-pointer transition-colors backdrop-blur-md">Cancelar</button>
@@ -1265,12 +1908,72 @@
                                     ))}
                                 </div>
                                 
-                                <button 
-                                    onClick={() => setDrawnResultModal({ isOpen: false, result: null, groupIndex: null })} 
-                                    className="modal-red-btn w-full py-3.5 md:py-4 bg-red-600 hover:bg-red-500 text-white text-xs md:text-sm font-bold uppercase tracking-widest rounded-2xl cursor-pointer shadow-lg shadow-red-600/30 transition-all"
-                                >
-                                    Continuar
-                                </button>
+                                <div className="flex flex-col gap-2.5">
+                                    {(bracketParticipants.length === bracketSize || (Object.values(trios).filter(g => g.length > 0).length > 0 && drawnGroups.length >= Object.values(trios).filter(g => g.length > 0).length)) && (
+                                        <button 
+                                            onClick={handleCopyDrawnAndNotDrawn}
+                                            className="w-full py-3 bg-white/10 hover:bg-white/20 border border-white/20 text-zinc-100 text-xs md:text-sm font-semibold uppercase tracking-wider rounded-2xl cursor-pointer transition-all flex items-center justify-center gap-2"
+                                        >
+                                            <Icon name="copy" size={16} />
+                                            Copiar nomes
+                                        </button>
+                                    )}
+                                    <button 
+                                        onClick={() => setDrawnResultModal({ isOpen: false, result: null, groupIndex: null })} 
+                                        className="modal-red-btn w-full py-3.5 md:py-4 bg-red-600 hover:bg-red-500 text-white text-xs md:text-sm font-bold uppercase tracking-widest rounded-2xl cursor-pointer shadow-lg shadow-red-600/30 transition-all"
+                                    >
+                                        Continuar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    {confirmRestartDraw && (
+                        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/60 backdrop-blur-2xl">
+                            <div className="animate-modal-pop apple-glass p-8 rounded-[2rem] max-w-sm w-full relative text-center">
+                                <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center border border-red-500/40 text-red-500 mx-auto mb-5 shadow-inner">
+                                    <Icon name="alert-triangle" size={32} strokeWidth={1.5} />
+                                </div>
+                                <h2 className="text-xl font-semibold tracking-tight text-zinc-100">Reiniciar Sorteio?</h2>
+                                <p className="text-sm text-zinc-300 mt-3 leading-relaxed">Todos os grupos já foram sorteados. Deseja reiniciar a lista de sorteados e começar novamente?</p>
+                                
+                                <div className="flex flex-col gap-3 w-full mt-6">
+                                    <button 
+                                        onClick={handleCopyDrawnAndNotDrawn}
+                                        className="w-full py-3 bg-white/10 hover:bg-white/20 border border-white/20 text-zinc-100 text-sm font-semibold rounded-2xl cursor-pointer transition-colors backdrop-blur-md flex items-center justify-center gap-2"
+                                    >
+                                        <Icon name="copy" size={16} />
+                                        Copiar nomes
+                                    </button>
+                                    <div className="flex gap-3 w-full">
+                                        <button onClick={() => setConfirmRestartDraw(false)} className="flex-1 py-3.5 bg-white/10 hover:bg-white/20 text-zinc-100 text-sm font-semibold rounded-2xl cursor-pointer transition-colors backdrop-blur-md">Cancelar</button>
+                                        <button onClick={() => {
+                                            setDrawnGroups([]);
+                                            setConfirmRestartDraw(false);
+                                        }} className="modal-red-btn flex-1 py-3.5 bg-red-600 hover:bg-red-500 text-white text-sm font-semibold rounded-2xl cursor-pointer shadow-md shadow-red-600/20 transition-all">Reiniciar</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {confirmClearBracket && (
+                        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/60 backdrop-blur-2xl">
+                            <div className="animate-modal-pop apple-glass p-8 rounded-[2rem] max-w-sm w-full relative text-center">
+                                <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center border border-red-500/40 text-red-500 mx-auto mb-5 shadow-inner">
+                                    <Icon name="trash-2" size={32} strokeWidth={1.5} />
+                                </div>
+                                <h2 className="text-xl font-semibold tracking-tight text-zinc-100">Limpar Chave?</h2>
+                                <p className="text-sm text-zinc-300 mt-3 leading-relaxed">Deseja limpar toda a chave do torneio no Modo Folhinha?</p>
+                                
+                                <div className="flex gap-3 w-full mt-8">
+                                    <button onClick={() => setConfirmClearBracket(false)} className="flex-1 py-3.5 bg-white/10 hover:bg-white/20 text-zinc-100 text-sm font-semibold rounded-2xl cursor-pointer transition-colors backdrop-blur-md">Cancelar</button>
+                                    <button onClick={() => {
+                                        setBracketParticipants([]);
+                                        setBracketAdvancements({});
+                                        setConfirmClearBracket(false);
+                                    }} className="modal-red-btn flex-1 py-3.5 bg-red-600 hover:bg-red-500 text-white text-sm font-semibold rounded-2xl cursor-pointer shadow-md shadow-red-600/20 transition-all">Limpar</button>
+                                </div>
                             </div>
                         </div>
                     )}
@@ -1297,18 +2000,20 @@
                                 </div>
                                 
                                 <div className="space-y-8 text-sm text-zinc-300">
-                                    <div className="flex flex-col gap-3">
-                                        <div className="flex justify-between items-center">
-                                            <label className="font-medium text-zinc-100 tracking-tight">Tempo de contagem</label>
-                                            <span className="text-red-500 font-semibold bg-red-500/20 px-2 py-0.5 rounded-md settings-badge">{configCountdown}s</span>
+                                    {appMode !== 'folhinha' && (
+                                        <div className="flex flex-col gap-3">
+                                            <div className="flex justify-between items-center">
+                                                <label className="font-medium text-zinc-100 tracking-tight">Tempo de contagem</label>
+                                                <span className="text-red-500 font-semibold bg-red-500/20 px-2 py-0.5 rounded-md settings-badge">{configCountdown}s</span>
+                                            </div>
+                                            <input 
+                                                type="range" min="1" max="15" step="1" 
+                                                value={configCountdown} 
+                                                onChange={(e) => setConfigCountdown(Number(e.target.value))} 
+                                                className="w-full accent-red-500 cursor-pointer" 
+                                            />
                                         </div>
-                                        <input 
-                                            type="range" min="1" max="15" step="1" 
-                                            value={configCountdown} 
-                                            onChange={(e) => setConfigCountdown(Number(e.target.value))} 
-                                            className="w-full accent-red-500 cursor-pointer" 
-                                        />
-                                    </div>
+                                    )}
 
                                     {appMode === 'draft' && (
                                         <div className="flex flex-col gap-3">
@@ -1325,20 +2030,45 @@
                                         </div>
                                     )}
 
-                                    <div className="flex flex-col gap-3">
-                                        <div className="flex justify-between items-center">
-                                            <label className="font-medium text-zinc-100 tracking-tight">Tamanho do Grupo</label>
-                                            <span className="text-red-500 font-semibold bg-red-500/20 px-2 py-0.5 rounded-md settings-badge">
-                                                {configGroupSize === 1 ? 'MC' : configGroupSize === 2 ? 'Dupla' : configGroupSize === 3 ? 'Trio' : configGroupSize === 4 ? 'Quarteto' : 'Quinteto'} ({configGroupSize})
-                                            </span>
+                                    {appMode !== 'folhinha' && (
+                                        <div className="flex flex-col gap-3">
+                                            <div className="flex justify-between items-center">
+                                                <label className="font-medium text-zinc-100 tracking-tight">Tamanho do Grupo</label>
+                                                <span className="text-red-500 font-semibold bg-red-500/20 px-2 py-0.5 rounded-md settings-badge">
+                                                    {configGroupSize === 1 ? 'MC' : configGroupSize === 2 ? 'Dupla' : configGroupSize === 3 ? 'Trio' : configGroupSize === 4 ? 'Quarteto' : 'Quinteto'} ({configGroupSize})
+                                                </span>
+                                            </div>
+                                            <input 
+                                                type="range" min={appMode === 'chaveamento' ? 1 : 2} max="5" step="1" 
+                                                value={configGroupSize} 
+                                                onChange={(e) => setConfigGroupSize(Number(e.target.value))} 
+                                                className="w-full accent-red-500 cursor-pointer" 
+                                            />
                                         </div>
-                                        <input 
-                                            type="range" min={appMode === 'chaveamento' ? 1 : 2} max="5" step="1" 
-                                            value={configGroupSize} 
-                                            onChange={(e) => setConfigGroupSize(Number(e.target.value))} 
-                                            className="w-full accent-red-500 cursor-pointer" 
-                                        />
-                                    </div>
+                                    )}
+
+                                    {(appMode === 'folhinha' || appMode === 'chaveamento') && (
+                                        <div className="flex flex-col gap-3">
+                                            <div className="flex justify-between items-center">
+                                                <label className="font-medium text-zinc-100 tracking-tight">Tamanho da Chave</label>
+                                                <span className="text-red-500 font-semibold bg-red-500/20 px-2 py-0.5 rounded-md settings-badge">{bracketSize} vagas</span>
+                                            </div>
+                                            <div className="grid grid-cols-4 gap-2">
+                                                {[4, 8, 16, 32].map(size => (
+                                                    <button
+                                                        key={size}
+                                                        onClick={() => {
+                                                            setBracketSize(size);
+                                                            setBracketAdvancements({});
+                                                        }}
+                                                        className={`py-2 rounded-xl font-bold text-xs transition-all cursor-pointer border ${bracketSize === size ? 'bg-red-600 text-white border-red-500 shadow-md settings-concluir-btn' : 'bg-white/5 text-zinc-300 border-white/10 hover:bg-white/10'}`}
+                                                    >
+                                                        {size}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {appMode === 'chaveamento' && (
                                         <div className="flex flex-col gap-2">
@@ -1390,11 +2120,12 @@
                                 <div className="space-y-4 text-sm text-zinc-300 leading-relaxed overflow-y-auto max-h-[60vh] pr-4 font-medium">
                                     <p><strong className="text-white">Modo Draft:</strong> Nesse modo você pode adicionar todos os mc's participantes, definir os capitães e sortear a ordem de escolhas dos integrantes. Feito para facilitar a escolha dos grupos de forma fluida e simples.</p>
                                     <p><strong className="text-white">Modo Chaveamento:</strong> Nesse modo você pode adicionar todos os mc's (basta clicar no nome deles para auto-adicionar nas caixas) e sortear a ordem individual dos confrontos. Feito para sortear a ordem de confrontos de uma batalha, assim dispensando utilização sorteio no papel ou em sites externos.</p>
+                                    <p><strong className="text-white">Modo Folhinha:</strong> Visualize e gerencie a chave do torneio. Os MCs/Grupos sorteados no Modo Chaveamento são enviados automaticamente para cá. Clique nos vencedores para avançá-los de fase até a final!</p>
                                     <hr className="border-white/10 my-4" />
-                                    <p><strong className="text-white">1. Adicionar MC's:</strong> Digite o nome do MC na barra lateral e clique no "+" ou aperte "Enter".</p>
+                                    <p><strong className="text-white">1. Adicionar MC's:</strong> Digite o nome do MC na barra lateral (ou cole uma lista separada por vírgulas/linhas) e clique no "+" ou aperte "Enter".</p>
                                     <p><strong className="text-yellow-400">2. Capitães (Cor Dourada - Draft):</strong> Arraste o MC para o 1º espaço de qualquer trio para marcá-lo como Capitão.</p>
                                     <p><strong className="text-green-400">3. Formar Grupos:</strong> Arraste os outros MC's para preencher as caixas. Com as pessoas suficientes, a borda ficará verde indicando completo.</p>
-                                    <p><strong className="text-red-400">4. Sortear Ordem:</strong> Clique no botão no topo. Ele embaralhará todas as posições (Draft) ou sorteará um confronto final (Chaveamento).</p>
+                                    <p><strong className="text-always-red text-red-400">4. Sortear Ordem:</strong> Clique no botão no topo. Ele embaralhará todas as posições (Draft), sorteará um participante para a chave (Chaveamento) ou embaralhará os confrontos da fase atual (Folhinha).</p>
                                     <p><strong className="text-blue-400">5. Customizar:</strong> Clique no Título "Batalha da Torre" para editá-lo e mudar a cor. Clique na Logo para alterar a imagem.</p>
                                 </div>
                                 
