@@ -299,7 +299,7 @@
 
         function App() {
             const urlParams = new URLSearchParams(window.location.search);
-            const initialMode = ['chaveamento', 'folhinha'].includes(urlParams.get('mode')) ? urlParams.get('mode') : 'draft';
+            const initialMode = ['draft', 'chaveamento', 'folhinha'].includes(urlParams.get('mode')) ? urlParams.get('mode') : 'chaveamento';
 
             const [theme, setTheme] = useState('dark');
             const [appMode, setAppMode] = useState(initialMode);
@@ -311,7 +311,7 @@
             
             // Inicialização dinâmica de caixas baseada no modo atual
             const initialTrios = {};
-            const initialBoxCount = (initialMode === 'chaveamento' || initialMode === 'folhinha') ? 16 : 8;
+            const initialBoxCount = (initialMode === 'chaveamento' || initialMode === 'folhinha') ? 1 : 8;
             for (let i = 0; i < initialBoxCount; i++) {
                 initialTrios[i] = [];
             }
@@ -325,6 +325,9 @@
             const [confirmTrioRemoval, setConfirmTrioRemoval] = useState({ isOpen: false, trioId: null });
             const [confirmGoToChaveamento, setConfirmGoToChaveamento] = useState(false);
             const [confirmRestartDraw, setConfirmRestartDraw] = useState(false);
+            const [confirmAvailableMcRemoval, setConfirmAvailableMcRemoval] = useState({ isOpen: false, mc: null });
+            const [confirmSendToFolhinha, setConfirmSendToFolhinha] = useState({ isOpen: false, trioId: null });
+            const [confirmRemoveFromFolhinha, setConfirmRemoveFromFolhinha] = useState({ isOpen: false, roundIndex: null, slotIndex: null, participant: null });
 
             const [isShuffling, setIsShuffling] = useState(false);
             const [countdown, setCountdown] = useState((initialMode === 'chaveamento' || initialMode === 'folhinha') ? 3 : 5);
@@ -335,15 +338,19 @@
 
             const [allowRepetition, setAllowRepetition] = useState(false);
             const [drawnGroups, setDrawnGroups] = useState([]);
-            const [drawnResultModal, setDrawnResultModal] = useState({ isOpen: false, result: null, groupIndex: null });
+            const [drawnResultModal, setDrawnResultModal] = useState({ isOpen: false, result: null, groupIndex: null, matchupOpponent: null });
             const [confirmModeSwitch, setConfirmModeSwitch] = useState({ isOpen: false, targetMode: null });
 
             // Estados da Folhinha
             const [bracketSize, setBracketSize] = useState(16);
             const [bracketParticipants, setBracketParticipants] = useState([]);
             const [bracketAdvancements, setBracketAdvancements] = useState({});
+            const [bracketScores, setBracketScores] = useState({});
             const [confirmClearBracket, setConfirmClearBracket] = useState(false);
             const [lastEliminatedMcs, setLastEliminatedMcs] = useState([]);
+            const [directFolhinhaIds, setDirectFolhinhaIds] = useState([]);
+            const [isFolhinhaEditMode, setIsFolhinhaEditMode] = useState(false);
+            const [selectedFolhinhaSlot, setSelectedFolhinhaSlot] = useState(null);
 
             const [isHelpOpen, setIsHelpOpen] = useState(false);
 
@@ -381,21 +388,48 @@
                 e.preventDefault();
                 if (!newMcName.trim()) return;
                 
-                // Quebra a string por vírgulas ou quebras de linha
-                const rawNames = newMcName.split(/,|\n/);
+                // Quebra a string por vírgulas, quebras de linha, marcadores ou numerações de lista
+                const rawNames = newMcName.split(/,|\n|\r|;|•|▪|‣|\*|(?:^|\s+)(?:\d+[\.\)\-º°:]+\s*|\-\s+)/);
                 
                 const processedNames = rawNames.map(name => {
-                    return name.replace(/^[\s\d\.\-\*•]+/, '').trim();
+                    return name.replace(/^[\s\d\.\-\*•▪‣\)\(º°:]+/, '').trim();
                 }).filter(name => name.length > 0);
 
                 if (processedNames.length > 0) {
-                    const newMcs = processedNames.map(name => ({
-                        id: Date.now().toString() + Math.random(),
-                        name: name
-                    }));
-                    setAvailableMCs([...availableMCs, ...newMcs]);
-                    setNewMcName('');
-                    setWarning('');
+                    const existingNames = new Set([
+                        ...availableMCs.map(m => m.name.toLowerCase()),
+                        ...Object.values(trios).flat().map(m => m.name.toLowerCase())
+                    ]);
+                    
+                    const uniqueNewMcs = [];
+                    let duplicateFound = false;
+
+                    processedNames.forEach(name => {
+                        const lower = name.toLowerCase();
+                        if (!existingNames.has(lower)) {
+                            existingNames.add(lower);
+                            uniqueNewMcs.push({
+                                id: Date.now().toString() + Math.random(),
+                                name: name
+                            });
+                        } else {
+                            duplicateFound = true;
+                        }
+                    });
+
+                    if (uniqueNewMcs.length > 0) {
+                        setAvailableMCs([...availableMCs, ...uniqueNewMcs]);
+                        setNewMcName('');
+                        if (duplicateFound) {
+                            setWarning('Alguns nomes duplicados foram ignorados!');
+                            setTimeout(() => setWarning(''), 3000);
+                        } else {
+                            setWarning('');
+                        }
+                    } else if (duplicateFound) {
+                        setWarning('Este MC já está na lista ou em um grupo!');
+                        setTimeout(() => setWarning(''), 3000);
+                    }
                 }
             };
 
@@ -429,8 +463,9 @@
             };
 
             const handleCopyDrawnAndNotDrawn = async () => {
-                const drawnIds = new Set(bracketParticipants.flat().map(mc => mc.id));
-                const drawnNames = bracketParticipants.map((group, idx) => `${idx + 1}. ${group.map(m => m.name).join(' / ')}`);
+                const validBracketParticipants = bracketParticipants.filter(Boolean);
+                const drawnIds = new Set(validBracketParticipants.flat().map(mc => mc.id));
+                const drawnNames = validBracketParticipants.map((group, idx) => `${idx + 1}. ${group.map(m => m.name).join(' / ')}`);
 
                 const currentNotDrawnGroups = Object.values(trios).filter(group => group.length > 0 && !group.some(mc => drawnIds.has(mc.id)));
                 const allNotDrawnGroups = currentNotDrawnGroups.length > 0 ? currentNotDrawnGroups : lastEliminatedMcs;
@@ -492,7 +527,12 @@
                         const p1Name = p1Data ? p1Data.map(mc => mc.name).join(' / ') : 'Aguardando';
                         const p2Name = p2Data ? p2Data.map(mc => mc.name).join(' / ') : 'Aguardando';
 
-                        roundText += `Confronto ${m + 1}: ${p1Name} vs ${p2Name}\n`;
+                        const s1 = bracketScores[`${r}_${m}_p1`] ?? 0;
+                        const s2 = bracketScores[`${r}_${m}_p2`] ?? 0;
+                        const scoreStr1 = p1Data ? ` (${s1})` : '';
+                        const scoreStr2 = p2Data ? ` (${s2})` : '';
+
+                        roundText += `${p1Name}${scoreStr1} vs ${p2Name}${scoreStr2}\n`;
                     }
 
                     if (roundHasData || r === 0) {
@@ -576,7 +616,7 @@
                 setAvailableMCs([]);
                 
                 let newTrios = {};
-                let boxCount = (targetMode === 'chaveamento' || targetMode === 'folhinha') ? 16 : 8;
+                let boxCount = (targetMode === 'chaveamento' || targetMode === 'folhinha') ? 1 : 8;
                 for (let i = 0; i < boxCount; i++) {
                     newTrios[i] = [];
                 }
@@ -585,6 +625,10 @@
                 setDrawnGroups([]);
                 setBracketParticipants([]);
                 setBracketAdvancements({});
+                setBracketScores({});
+                setDirectFolhinhaIds([]);
+                setIsFolhinhaEditMode(false);
+                setSelectedFolhinhaSlot(null);
                 setConfigGroupSize((targetMode === 'chaveamento' || targetMode === 'folhinha') ? 1 : 3);
                 setConfigCountdown((targetMode === 'chaveamento' || targetMode === 'folhinha') ? 3 : 5);
                 setConfirmModeSwitch({ isOpen: false, targetMode: null });
@@ -598,6 +642,13 @@
             };
 
             const handleGoToChaveamentoConfirm = () => {
+                const populatedGroupsCount = Object.values(trios).filter(group => group.length > 0).length;
+                if (populatedGroupsCount > 0) {
+                    const adjustedBracketSize = populatedGroupsCount <= 4 ? 4 : populatedGroupsCount <= 8 ? 8 : populatedGroupsCount <= 16 ? 16 : 32;
+                    setBracketSize(adjustedBracketSize);
+                    setBracketAdvancements({});
+                    setBracketScores({});
+                }
                 setConfirmGoToChaveamento(false);
                 setAppMode('chaveamento');
                 setAvailableMCs([]);
@@ -725,6 +776,160 @@
                 const existingKeys = Object.keys(trios).map(Number);
                 const nextIndex = existingKeys.length > 0 ? Math.max(...existingKeys) + 1 : 0;
                 setTrios(prev => ({ ...prev, [nextIndex]: [] }));
+            };
+
+            const executeDirectSendToFolhinha = (trioId) => {
+                const chosenMcs = trios[trioId];
+                if (!chosenMcs || chosenMcs.length === 0) {
+                    setConfirmSendToFolhinha({ isOpen: false, trioId: null });
+                    return;
+                }
+
+                const alreadyInBracket = bracketParticipants.some(group => group && group[0]?.id === chosenMcs[0]?.id);
+                if (alreadyInBracket) {
+                    setWarning(`Este ${getGroupName()} já está na Folhinha!`);
+                    setTimeout(() => setWarning(''), 3000);
+                    setConfirmSendToFolhinha({ isOpen: false, trioId: null });
+                    return;
+                }
+
+                const emptySlots = [];
+                for (let i = 0; i < bracketSize; i++) {
+                    if (!bracketParticipants[i]) {
+                        emptySlots.push(i);
+                    }
+                }
+
+                if (emptySlots.length === 0) {
+                    setWarning(`A Chave do Torneio (Folhinha) já está cheia (${bracketSize} vagas).`);
+                    setTimeout(() => setWarning(''), 3000);
+                    setConfirmSendToFolhinha({ isOpen: false, trioId: null });
+                    return;
+                }
+
+                const randomSlotIndex = emptySlots[Math.floor(Math.random() * emptySlots.length)];
+
+                if (chosenMcs[0]?.id) {
+                    setDirectFolhinhaIds(prev => [...prev, chosenMcs[0].id]);
+                }
+
+                // Remove o bloco/box do participante enviado e reajusta os índices sorteados
+                setDrawnGroups(prev => prev
+                    .filter(id => Number(id) !== Number(trioId))
+                    .map(id => Number(id) > Number(trioId) ? (Number(id) - 1).toString() : id)
+                );
+                setTrios(prev => {
+                    const updated = { ...prev };
+                    delete updated[trioId];
+                    const compacted = compactTriosMap(updated);
+                    return Object.keys(compacted).length > 0 ? compacted : { 0: [] };
+                });
+
+                setBracketParticipants(prev => {
+                    const newParticipants = [...prev];
+                    while (newParticipants.length < bracketSize) {
+                        newParticipants.push(null);
+                    }
+                    newParticipants[randomSlotIndex] = chosenMcs;
+
+                    const filledCount = newParticipants.filter(Boolean).length;
+                    if (filledCount === bracketSize) {
+                        const drawnMcIds = new Set(newParticipants.filter(Boolean).flat().map(mc => mc.id));
+                        setTimeout(() => {
+                            setTrios(currentTrios => {
+                                const newTrios = {};
+                                const eliminated = [];
+                                let newIdx = 0;
+                                Object.keys(currentTrios).map(Number).sort((a,b)=>a-b).forEach(key => {
+                                    const group = currentTrios[key];
+                                    const isGroupDrawn = group.length > 0 && group.some(mc => drawnMcIds.has(mc.id));
+                                    if (!isGroupDrawn && group.length > 0) {
+                                        newTrios[newIdx] = group;
+                                        eliminated.push(group);
+                                        newIdx++;
+                                    }
+                                });
+                                setLastEliminatedMcs(eliminated);
+                                setDrawnGroups([]);
+                                return newTrios;
+                            });
+                        }, 0);
+                    }
+                    return newParticipants;
+                });
+
+                const mcNames = chosenMcs.map(m => m.name).join(' / ');
+                setWarning(`✅ ${mcNames} enviado diretamente para a Folhinha!`);
+                setTimeout(() => setWarning(''), 3000);
+                setConfirmSendToFolhinha({ isOpen: false, trioId: null });
+            };
+
+            const executeRemoveFromFolhinha = () => {
+                const { roundIndex, slotIndex, participant } = confirmRemoveFromFolhinha;
+                if (!participant) {
+                    setConfirmRemoveFromFolhinha({ isOpen: false, roundIndex: null, slotIndex: null, participant: null });
+                    return;
+                }
+
+                if (participant[0]?.id) {
+                    setDirectFolhinhaIds(prev => prev.filter(id => id !== participant[0].id));
+                }
+
+                if (roundIndex > 0) {
+                    setBracketAdvancements(prev => {
+                        const updated = { ...prev };
+                        delete updated[`${roundIndex - 1}_${slotIndex}`];
+                        Object.keys(updated).forEach(k => {
+                            const [rIdx] = k.split('_').map(Number);
+                            if (rIdx >= roundIndex && updated[k]?.[0]?.id === participant[0]?.id) {
+                                delete updated[k];
+                            }
+                        });
+                        return updated;
+                    });
+                } else {
+                    setBracketParticipants(prev => {
+                        const updated = [...prev];
+                        updated[slotIndex] = null;
+                        return updated;
+                    });
+                    setBracketAdvancements(prev => {
+                        const updated = { ...prev };
+                        Object.keys(updated).forEach(k => {
+                            if (updated[k]?.[0]?.id === participant[0]?.id) {
+                                delete updated[k];
+                            }
+                        });
+                        return updated;
+                    });
+                }
+
+                setTrios(currentTrios => {
+                    const updated = { ...currentTrios };
+                    let existingBoxKey = null;
+                    Object.keys(updated).forEach(k => {
+                        if (updated[k].length > 0 && updated[k][0]?.id === participant[0]?.id) {
+                            existingBoxKey = k;
+                        }
+                    });
+
+                    if (existingBoxKey !== null) {
+                        setDrawnGroups(prev => prev.filter(id => id !== existingBoxKey.toString()));
+                        return updated;
+                    } else {
+                        const existingKeys = Object.keys(updated).map(Number);
+                        let emptyKey = existingKeys.find(k => updated[k].length === 0);
+                        if (emptyKey !== undefined) {
+                            updated[emptyKey] = participant;
+                        } else {
+                            const nextIndex = existingKeys.length > 0 ? Math.max(...existingKeys) + 1 : 0;
+                            updated[nextIndex] = participant;
+                        }
+                        return compactTriosMap(updated);
+                    }
+                });
+
+                setConfirmRemoveFromFolhinha({ isOpen: false, roundIndex: null, slotIndex: null, participant: null });
             };
 
             const handleCardMouseMove = (e) => {
@@ -917,6 +1122,7 @@
                                     return updated;
                                 });
                                 setBracketAdvancements({});
+                                setBracketScores({});
                             } else {
                                 setBracketAdvancements(prev => {
                                     const updated = { ...prev };
@@ -964,17 +1170,47 @@
                     const randomIndex = Math.floor(Math.random() * availableToDraw.length);
                     const [chosenIndex, chosenMcs] = availableToDraw[randomIndex];
                     
+                    let firstEmpty = -1;
+                    for (let i = 0; i < bracketSize; i++) {
+                        if (!bracketParticipants[i]) {
+                            firstEmpty = i;
+                            break;
+                        }
+                    }
+
+                    let matchedDirectOpponent = null;
+                    if (firstEmpty !== -1) {
+                        const opponentSlot = firstEmpty % 2 === 0 ? firstEmpty + 1 : firstEmpty - 1;
+                        const opponentGroup = bracketParticipants[opponentSlot];
+                        if (opponentGroup && opponentGroup[0]?.id && directFolhinhaIds.includes(opponentGroup[0].id)) {
+                            matchedDirectOpponent = opponentGroup;
+                        }
+                    }
+
                     setDrawnGroups(prev => [...prev, chosenIndex]);
-                    setDrawnResultModal({ isOpen: true, result: chosenMcs, groupIndex: chosenIndex });
+                    setDrawnResultModal({ isOpen: true, result: chosenMcs, groupIndex: chosenIndex, matchupOpponent: matchedDirectOpponent });
                     
                     // Joga pro modo folhinha automaticamente
                     setBracketParticipants(prev => {
-                        if (prev.length < bracketSize) {
-                            const newParticipants = [...prev, chosenMcs];
+                        const filledCount = prev.filter(Boolean).length;
+                        if (filledCount < bracketSize) {
+                            const newParticipants = [...prev];
+                            let targetEmpty = -1;
+                            for (let i = 0; i < bracketSize; i++) {
+                                if (!newParticipants[i]) {
+                                    targetEmpty = i;
+                                    break;
+                                }
+                            }
+                            if (targetEmpty !== -1) {
+                                newParticipants[targetEmpty] = chosenMcs;
+                            } else {
+                                newParticipants.push(chosenMcs);
+                            }
                             
-                            // Quando atinge o limite do tamanho da chave, remove os que não foram sorteados das boxes do modo chaveamento
-                            if (newParticipants.length === bracketSize) {
-                                const drawnMcIds = new Set(newParticipants.flat().map(mc => mc.id));
+                            // Quando atinge o limite do tamanho da chave, remove os que foram sorteados e deixa apenas os que não foram sorteados nas boxes do modo chaveamento
+                            if (newParticipants.filter(Boolean).length === bracketSize) {
+                                const drawnMcIds = new Set(newParticipants.filter(Boolean).flat().map(mc => mc.id));
                                 
                                 setTimeout(() => {
                                     setTrios(currentTrios => {
@@ -984,16 +1220,14 @@
                                         Object.keys(currentTrios).map(Number).sort((a,b)=>a-b).forEach(key => {
                                             const group = currentTrios[key];
                                             const isGroupDrawn = group.length > 0 && group.some(mc => drawnMcIds.has(mc.id));
-                                            if (isGroupDrawn) {
+                                            if (!isGroupDrawn && group.length > 0) {
                                                 newTrios[newIdx] = group;
-                                                newIdx++;
-                                            } else if (group.length > 0) {
                                                 eliminated.push(group);
+                                                newIdx++;
                                             }
                                         });
                                         setLastEliminatedMcs(eliminated);
-                                        // Garante que todos os grupos que ficaram apareçam como já sorteados após a reindexação
-                                        setDrawnGroups(Object.keys(newTrios));
+                                        setDrawnGroups([]);
                                         return newTrios;
                                     });
                                 }, 0);
@@ -1008,72 +1242,95 @@
                 }
             };
 
-            const executeShuffle = async () => {
-                setIsShuffling(false);
+            const executeRandomTeamFill = async () => {
+                if (configGroupSize < 2) return;
+                if (availableMCs.length === 0) {
+                    setWarning("Adicione MCs na Lista de MC's primeiro para sortear nas caixas!");
+                    setTimeout(() => setWarning(''), 3000);
+                    return;
+                }
 
-                await new Promise(resolve => setTimeout(resolve, 50));
+                const baseTrios = {};
+                const emptySlotCoords = [];
+                const sortedKeys = Object.keys(trios).map(Number).sort((a, b) => a - b);
 
-                let currentTrioValues = Object.values(trios);
-                const originalTrioValues = [...currentTrioValues];
+                sortedKeys.forEach(key => {
+                    baseTrios[key] = [...trios[key]];
+                    const emptyCount = Math.max(0, configGroupSize - baseTrios[key].length);
+                    for (let s = 0; s < emptyCount; s++) {
+                        emptySlotCoords.push({ boxKey: key });
+                    }
+                });
 
-                const getDerangement = (currentArray, originalArrayToAvoid) => {
-                    if (currentArray.length <= 1) return [...currentArray];
-                    let newArray = [...currentArray];
-                    let isDerangement = false;
+                if (emptySlotCoords.length === 0) {
+                    setWarning(`Não há espaços vazios disponíveis nas caixas! Adicione mais ${getPluralGroupName()} primeiro.`);
+                    setTimeout(() => setWarning(''), 3500);
+                    return;
+                }
+
+                const pool = [...availableMCs];
+                const numToFill = Math.min(emptySlotCoords.length, pool.length);
+                const targetCoords = emptySlotCoords.slice(0, numToFill);
+                let prevAssignedIds = [];
+
+                const pickDifferentAssignment = () => {
+                    let candidate = [...pool];
+                    let valid = false;
                     let attempts = 0;
-                    
-                    while (!isDerangement && attempts < 200) {
-                        for (let i = newArray.length - 1; i > 0; i--) {
+
+                    while (!valid && attempts < 200) {
+                        for (let i = candidate.length - 1; i > 0; i--) {
                             const j = Math.floor(Math.random() * (i + 1));
-                            [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+                            [candidate[i], candidate[j]] = [candidate[j], candidate[i]];
                         }
-                        
-                        isDerangement = true;
-                        for (let i = 0; i < currentArray.length; i++) {
-                            if (newArray[i] === currentArray[i]) {
-                                isDerangement = false;
-                                break;
-                            }
-                            if (originalArrayToAvoid && newArray[i] === originalArrayToAvoid[i]) {
-                                isDerangement = false;
-                                break;
+                        const picked = candidate.slice(0, numToFill);
+                        valid = true;
+                        if (pool.length > 1 && prevAssignedIds.length === numToFill) {
+                            for (let i = 0; i < numToFill; i++) {
+                                if (picked[i].id === prevAssignedIds[i]) {
+                                    valid = false;
+                                    break;
+                                }
                             }
                         }
                         attempts++;
                     }
-                    return newArray;
+
+                    const chosen = candidate.slice(0, numToFill);
+                    const leftover = candidate.slice(numToFill);
+                    prevAssignedIds = chosen.map(m => m.id);
+                    return { chosen, leftover };
                 };
 
-                for (let step = 1; step <= configShuffleSteps; step++) {
+                const steps = 5;
+                for (let step = 1; step <= steps; step++) {
                     await new Promise(resolve => {
-                        const isLastStep = step === configShuffleSteps;
-                        const nextTrioValues = getDerangement(
-                            currentTrioValues, 
-                            isLastStep ? originalTrioValues : null
-                        );
-                        currentTrioValues = nextTrioValues;
+                        const isLastStep = step === steps;
+                        const { chosen, leftover } = pickDifferentAssignment();
 
-                        const applyShuffle = () => {
-                            setTrios(() => {
-                                const newTrios = {};
-                                nextTrioValues.forEach((trio, index) => {
-                                    newTrios[index] = trio; 
-                                });
-                                return newTrios;
+                        const applyStep = () => {
+                            const nextTrios = {};
+                            sortedKeys.forEach(k => {
+                                nextTrios[k] = [...baseTrios[k]];
                             });
+                            targetCoords.forEach((coord, idx) => {
+                                nextTrios[coord.boxKey].push(chosen[idx]);
+                            });
+                            setTrios(nextTrios);
+                            setAvailableMCs(leftover);
                         };
 
                         if (document.startViewTransition) {
                             const transition = document.startViewTransition(() => {
                                 ReactDOM.flushSync(() => {
-                                    applyShuffle();
+                                    applyStep();
                                 });
                             });
                             transition.finished.then(() => {
-                                setTimeout(resolve, isLastStep ? 0 : 400); 
+                                setTimeout(resolve, isLastStep ? 0 : 400);
                             });
                         } else {
-                            applyShuffle();
+                            applyStep();
                             setTimeout(resolve, 300);
                         }
                     });
@@ -1100,7 +1357,18 @@
                 return 'Grupo';
             };
 
+            const getPluralGroupName = () => {
+                if (configGroupSize === 1) return "MC's";
+                if (configGroupSize === 2) return "Duplas";
+                if (configGroupSize === 3) return "Trios";
+                if (configGroupSize === 4) return "Quartetos";
+                if (configGroupSize === 5) return "Quintetos";
+                return "Grupos";
+            };
+
             const hasAnyGroupContent = Object.values(trios).some(group => group.length > 0);
+            const hasIncompleteGroupsInDraft = Object.values(trios).some(group => group.length < configGroupSize);
+            const isBracketFullInChaveamento = appMode === 'chaveamento' && bracketParticipants.filter(Boolean).length >= bracketSize;
 
             // Criação visual e funcional da Folhinha (Bracket)
             const renderBracket = () => {
@@ -1110,6 +1378,103 @@
                 const isSameParticipant = (a, b) => {
                     if (!a || !b || a.length !== b.length) return false;
                     return a[0]?.id === b[0]?.id;
+                };
+
+                const getSlotParticipant = (r, slotIdx) => {
+                    if (r === 0) return bracketParticipants[slotIdx] || null;
+                    return bracketAdvancements[`${r - 1}_${slotIdx}`] || null;
+                };
+
+                const swapFolhinhaSlots = (source, target) => {
+                    if (!source || !target) return;
+                    if (source.r === target.r && source.slotIndex === target.slotIndex) {
+                        setSelectedFolhinhaSlot(null);
+                        return;
+                    }
+
+                    const valSource = getSlotParticipant(source.r, source.slotIndex);
+                    const valTarget = getSlotParticipant(target.r, target.slotIndex);
+
+                    if (source.r === 0 && target.r === 0) {
+                        setBracketParticipants(prev => {
+                            const updated = [...prev];
+                            while (updated.length < bracketSize) updated.push(null);
+                            updated[source.slotIndex] = valTarget;
+                            updated[target.slotIndex] = valSource;
+                            return updated;
+                        });
+                    } else if (source.r > 0 && target.r > 0) {
+                        setBracketAdvancements(prev => {
+                            const updated = { ...prev };
+                            const sKey = `${source.r - 1}_${source.slotIndex}`;
+                            const tKey = `${target.r - 1}_${target.slotIndex}`;
+                            if (valTarget) updated[sKey] = valTarget; else delete updated[sKey];
+                            if (valSource) updated[tKey] = valSource; else delete updated[tKey];
+                            return updated;
+                        });
+                    } else {
+                        const r0 = source.r === 0 ? source : target;
+                        const rAdv = source.r > 0 ? source : target;
+                        const val0 = source.r === 0 ? valSource : valTarget;
+                        const valAdv = source.r > 0 ? valSource : valTarget;
+
+                        setBracketParticipants(prev => {
+                            const updated = [...prev];
+                            while (updated.length < bracketSize) updated.push(null);
+                            updated[r0.slotIndex] = valAdv;
+                            return updated;
+                        });
+                        setBracketAdvancements(prev => {
+                            const updated = { ...prev };
+                            const advKey = `${rAdv.r - 1}_${rAdv.slotIndex}`;
+                            if (val0) updated[advKey] = val0; else delete updated[advKey];
+                            return updated;
+                        });
+                    }
+
+                    setSelectedFolhinhaSlot(null);
+                };
+
+                const handleFolhinhaSlotClick = (r, slotIdx, pData, opponentData, matchIdx) => {
+                    if (isFolhinhaEditMode) {
+                        if (!selectedFolhinhaSlot) {
+                            if (pData) {
+                                setSelectedFolhinhaSlot({ r, slotIndex: slotIdx });
+                            }
+                        } else {
+                            swapFolhinhaSlots(selectedFolhinhaSlot, { r, slotIndex: slotIdx });
+                        }
+                        return;
+                    }
+
+                    if (!pData) return;
+                    if (r === numRounds - 1) {
+                        setBracketAdvancements(prev => {
+                            const updated = { ...prev };
+                            delete updated[`${r - 1}_0`];
+                            return updated;
+                        });
+                        return;
+                    }
+
+                    const nextRoundTotalSlots = bracketSize / Math.pow(2, r + 1);
+                    let pWon = false;
+                    let oppWon = false;
+                    for (let s = 0; s < nextRoundTotalSlots; s++) {
+                        const adv = bracketAdvancements[`${r}_${s}`];
+                        if (adv) {
+                            if (isSameParticipant(adv, pData)) pWon = true;
+                            if (isSameParticipant(adv, opponentData)) oppWon = true;
+                        }
+                    }
+                    const pLost = oppWon && pData !== null;
+
+                    if (r > 0 && !pWon && !pLost && !opponentData) {
+                        revertParticipantFromSlot(r, slotIdx);
+                        return;
+                    }
+                    if (pWon) return;
+                    advanceParticipant(r, matchIdx, pData, opponentData);
                 };
 
                 const advanceParticipant = (roundIndex, matchIndex, participantData, loserData) => {
@@ -1210,29 +1575,38 @@
                     for (let m = 0; m < numMatches; m++) {
                         if (isChampionRound) {
                             const champData = bracketAdvancements[`${r-1}_0`];
+                            const isChampSelected = isFolhinhaEditMode && selectedFolhinhaSlot?.r === r && selectedFolhinhaSlot?.slotIndex === 0;
                             matches.push(
                                 <div key={`champ-${m}`} className="flex flex-col justify-center my-2 relative z-10">
                                     <div className="text-[10px] text-yellow-400 font-bold uppercase mb-1 text-center flex items-center justify-center gap-1"><Icon name="crown" size={12}/> Campeão</div>
                                     <div 
-                                        onClick={() => {
-                                            if (champData) {
-                                                setBracketAdvancements(prev => {
-                                                    const updated = { ...prev };
-                                                    delete updated[`${r-1}_0`];
-                                                    return updated;
-                                                });
-                                            }
+                                        draggable={isFolhinhaEditMode && Boolean(champData)}
+                                        onDragStart={(e) => {
+                                            if (!isFolhinhaEditMode || !champData) return;
+                                            e.dataTransfer.setData('application/folhinha-slot', JSON.stringify({ r, slotIndex: 0 }));
                                         }}
-                                        title={champData ? "Clique para remover e voltar para a fase anterior" : ""}
-                                        className={`h-[50px] w-36 md:w-48 rounded-xl border-2 flex items-center justify-center px-3 shadow-lg transition-all ${champData ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400 cursor-pointer hover:scale-[1.02]' : 'bg-black/20 border-white/10 text-zinc-500 border-dashed'}`}
+                                        onDragOver={(e) => { if (isFolhinhaEditMode) e.preventDefault(); }}
+                                        onDrop={(e) => {
+                                            if (!isFolhinhaEditMode) return;
+                                            e.preventDefault();
+                                            try {
+                                                const src = JSON.parse(e.dataTransfer.getData('application/folhinha-slot'));
+                                                swapFolhinhaSlots(src, { r, slotIndex: 0 });
+                                            } catch (err) {}
+                                        }}
+                                        onClick={() => handleFolhinhaSlotClick(r, 0, champData, null, m)}
+                                        title={isFolhinhaEditMode ? "Modo Editor: clique ou arraste para mover/trocar" : (champData ? "Clique para remover e voltar para a fase anterior" : "")}
+                                        className={`h-[50px] w-36 md:w-48 rounded-xl border-2 flex items-center justify-center px-3 shadow-lg transition-all ${champData ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400 cursor-pointer hover:scale-[1.02]' : `bg-black/20 border-white/10 text-zinc-500 border-dashed ${isFolhinhaEditMode ? 'cursor-pointer hover:border-yellow-400/50' : ''}`} ${isChampSelected ? 'ring-2 ring-yellow-400 border-yellow-400 scale-[1.03]' : ''}`}
                                     >
                                         {champData ? <span className="font-bold truncate text-sm">{champData.map(mc=>mc.name).join(' / ')}</span> : <span className="text-[10px] uppercase font-semibold">Vazio</span>}
                                     </div>
                                 </div>
                             );
                         } else {
-                            let p1Data = r === 0 ? (bracketParticipants[m * 2] || null) : (bracketAdvancements[`${r-1}_${m * 2}`] || null);
-                            let p2Data = r === 0 ? (bracketParticipants[m * 2 + 1] || null) : (bracketAdvancements[`${r-1}_${m * 2 + 1}`] || null);
+                            const slot1Idx = m * 2;
+                            const slot2Idx = m * 2 + 1;
+                            let p1Data = r === 0 ? (bracketParticipants[slot1Idx] || null) : (bracketAdvancements[`${r-1}_${slot1Idx}`] || null);
+                            let p2Data = r === 0 ? (bracketParticipants[slot2Idx] || null) : (bracketAdvancements[`${r-1}_${slot2Idx}`] || null);
 
                             const nextRoundTotalSlots = bracketSize / Math.pow(2, r + 1);
                             let p1Won = false;
@@ -1250,98 +1624,142 @@
                             const p1VtName = p1Data && p1Data[0] ? `folha-r${r}-${p1Data[0].id.toString().replace(/[^a-zA-Z0-9]/g, '')}` : undefined;
                             const p2VtName = p2Data && p2Data[0] ? `folha-r${r}-${p2Data[0].id.toString().replace(/[^a-zA-Z0-9]/g, '')}` : undefined;
 
-                            let p1Style = 'bg-black/10 border-white/5 border-dashed text-zinc-600';
+                            const isP1Selected = isFolhinhaEditMode && selectedFolhinhaSlot?.r === r && selectedFolhinhaSlot?.slotIndex === slot1Idx;
+                            const isP2Selected = isFolhinhaEditMode && selectedFolhinhaSlot?.r === r && selectedFolhinhaSlot?.slotIndex === slot2Idx;
+
+                            let p1Style = `bg-black/10 border-white/5 border-dashed text-zinc-600 ${isFolhinhaEditMode ? 'hover:border-yellow-400/50' : ''}`;
                             if (p1Data) {
                                 if (p1Won) p1Style = 'bg-green-500/20 border-green-500 text-green-400 hover:bg-green-500/30 hover:scale-[1.02]';
                                 else if (p1Lost) p1Style = 'bg-red-500/20 border-red-500 text-red-400 red-mode-white hover:bg-red-500/30 hover:scale-[1.02]';
                                 else p1Style = 'bg-black/40 border-white/20 hover:border-red-500/50 text-zinc-100 hover:bg-white/10 hover:scale-[1.02]';
                             }
 
-                            let p2Style = 'bg-black/10 border-white/5 border-dashed text-zinc-600';
+                            let p2Style = `bg-black/10 border-white/5 border-dashed text-zinc-600 ${isFolhinhaEditMode ? 'hover:border-yellow-400/50' : ''}`;
                             if (p2Data) {
                                 if (p2Won) p2Style = 'bg-green-500/20 border-green-500 text-green-400 hover:bg-green-500/30 hover:scale-[1.02]';
                                 else if (p2Lost) p2Style = 'bg-red-500/20 border-red-500 text-red-400 red-mode-white hover:bg-red-500/30 hover:scale-[1.02]';
                                 else p2Style = 'bg-black/40 border-white/20 hover:border-red-500/50 text-zinc-100 hover:bg-white/10 hover:scale-[1.02]';
                             }
 
+                            const p1Score = bracketScores[`${r}_${m}_p1`] ?? 0;
+                            const p2Score = bracketScores[`${r}_${m}_p2`] ?? 0;
+
                             matches.push(
                                 <div key={`match-${r}-${m}`} className="flex flex-col justify-center my-3 relative z-10">
                                     <div className="flex flex-col gap-2 p-2 bg-black/20 border border-white/5 rounded-2xl relative shadow-md">
                                         <div 
-                                            onClick={() => {
-                                                if (!p1Data) return;
-                                                if (r > 0 && !p1Won && !p1Lost && !p2Data) {
-                                                    revertParticipantFromSlot(r, m * 2);
-                                                    return;
-                                                }
-                                                if (p1Won) return;
-                                                advanceParticipant(r, m, p1Data, p2Data);
+                                            draggable={isFolhinhaEditMode && Boolean(p1Data)}
+                                            onDragStart={(e) => {
+                                                if (!isFolhinhaEditMode || !p1Data) return;
+                                                e.dataTransfer.setData('application/folhinha-slot', JSON.stringify({ r, slotIndex: slot1Idx }));
                                             }}
+                                            onDragOver={(e) => { if (isFolhinhaEditMode) e.preventDefault(); }}
+                                            onDrop={(e) => {
+                                                if (!isFolhinhaEditMode) return;
+                                                e.preventDefault();
+                                                try {
+                                                    const src = JSON.parse(e.dataTransfer.getData('application/folhinha-slot'));
+                                                    swapFolhinhaSlots(src, { r, slotIndex: slot1Idx });
+                                                } catch (err) {}
+                                            }}
+                                            onClick={() => handleFolhinhaSlotClick(r, slot1Idx, p1Data, p2Data, m)}
                                             onContextMenu={(e) => {
-                                                if (r > 0 && p1Data) {
+                                                if (r > 0 && p1Data && !isFolhinhaEditMode) {
                                                     e.preventDefault();
-                                                    revertParticipantFromSlot(r, m * 2);
+                                                    revertParticipantFromSlot(r, slot1Idx);
                                                 }
                                             }}
                                             style={p1VtName ? { viewTransitionName: p1VtName } : {}}
-                                            className={`h-[44px] w-36 md:w-48 rounded-xl border-2 flex items-center justify-between px-3 cursor-pointer transition-all ${p1Style}`}
-                                            title={p1Data ? (r > 0 && !p1Won && !p1Lost && !p2Data ? "Clique para remover e voltar para a fase anterior" : "Clique para avançar") : ""}
+                                            className={`h-[44px] w-40 md:w-52 rounded-xl border-2 flex items-center justify-between px-2.5 cursor-pointer transition-all ${p1Style} ${isP1Selected ? 'ring-2 ring-yellow-400 border-yellow-400 scale-[1.03]' : ''}`}
+                                            title={isFolhinhaEditMode ? "Modo Editor: clique ou arraste para trocar de lugar" : (p1Data ? (r > 0 && !p1Won && !p1Lost && !p2Data ? "Clique para remover e voltar para a fase anterior" : "Clique para avançar") : "")}
                                         >
                                             {p1Data ? (
                                                 <>
-                                                    <span className="font-semibold truncate text-[11px] md:text-xs">{p1Data.map(mc=>mc.name).join(' / ')}</span>
-                                                    {r > 0 && !p1Won && (
+                                                    <span className="font-semibold truncate text-[11px] md:text-xs flex-1 text-left">{p1Data.map(mc=>mc.name).join(' / ')}</span>
+                                                    <div className="flex items-center gap-1 ml-1 shrink-0">
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                revertParticipantFromSlot(r, m * 2);
+                                                                setBracketScores(prev => ({
+                                                                    ...prev,
+                                                                    [`${r}_${m}_p1`]: ((prev[`${r}_${m}_p1`] ?? 0) + 1) % 6
+                                                                }));
                                                             }}
-                                                            className="ml-1 p-0.5 rounded-full hover:bg-red-500/30 text-zinc-400 hover:text-red-300 transition-colors"
-                                                            title="Voltar para a fase anterior"
+                                                            className="w-6 h-6 rounded-lg bg-black/40 hover:bg-black/60 border border-white/20 flex items-center justify-center text-[11px] font-bold text-white transition-all shadow-sm"
+                                                            title="Clique para alterar o placar (0 a 5)"
+                                                        >
+                                                            {p1Score}
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setConfirmRemoveFromFolhinha({ isOpen: true, roundIndex: r, slotIndex: slot1Idx, participant: p1Data });
+                                                            }}
+                                                            className="p-0.5 rounded-full hover:bg-red-500/30 text-zinc-400 hover:text-red-300 transition-colors"
+                                                            title={r === 0 ? "Remover da chave e devolver ao chaveamento/sorteio" : "Voltar para a fase anterior"}
                                                         >
                                                             <Icon name="x" size={12} />
                                                         </button>
-                                                    )}
+                                                    </div>
                                                 </>
-                                            ) : <span className="text-[9px] uppercase font-semibold">Aguardando</span>}
+                                            ) : <span className="text-[9px] uppercase font-semibold">{isFolhinhaEditMode && selectedFolhinhaSlot ? 'Mover para cá' : 'Aguardando'}</span>}
                                         </div>
                                         <div 
-                                            onClick={() => {
-                                                if (!p2Data) return;
-                                                if (r > 0 && !p2Won && !p2Lost && !p1Data) {
-                                                    revertParticipantFromSlot(r, m * 2 + 1);
-                                                    return;
-                                                }
-                                                if (p2Won) return;
-                                                advanceParticipant(r, m, p2Data, p1Data);
+                                            draggable={isFolhinhaEditMode && Boolean(p2Data)}
+                                            onDragStart={(e) => {
+                                                if (!isFolhinhaEditMode || !p2Data) return;
+                                                e.dataTransfer.setData('application/folhinha-slot', JSON.stringify({ r, slotIndex: slot2Idx }));
                                             }}
+                                            onDragOver={(e) => { if (isFolhinhaEditMode) e.preventDefault(); }}
+                                            onDrop={(e) => {
+                                                if (!isFolhinhaEditMode) return;
+                                                e.preventDefault();
+                                                try {
+                                                    const src = JSON.parse(e.dataTransfer.getData('application/folhinha-slot'));
+                                                    swapFolhinhaSlots(src, { r, slotIndex: slot2Idx });
+                                                } catch (err) {}
+                                            }}
+                                            onClick={() => handleFolhinhaSlotClick(r, slot2Idx, p2Data, p1Data, m)}
                                             onContextMenu={(e) => {
-                                                if (r > 0 && p2Data) {
+                                                if (r > 0 && p2Data && !isFolhinhaEditMode) {
                                                     e.preventDefault();
-                                                    revertParticipantFromSlot(r, m * 2 + 1);
+                                                    revertParticipantFromSlot(r, slot2Idx);
                                                 }
                                             }}
                                             style={p2VtName ? { viewTransitionName: p2VtName } : {}}
-                                            className={`h-[44px] w-36 md:w-48 rounded-xl border-2 flex items-center justify-between px-3 cursor-pointer transition-all ${p2Style}`}
-                                            title={p2Data ? (r > 0 && !p2Won && !p2Lost && !p1Data ? "Clique para remover e voltar para a fase anterior" : "Clique para avançar") : ""}
+                                            className={`h-[44px] w-40 md:w-52 rounded-xl border-2 flex items-center justify-between px-2.5 cursor-pointer transition-all ${p2Style} ${isP2Selected ? 'ring-2 ring-yellow-400 border-yellow-400 scale-[1.03]' : ''}`}
+                                            title={isFolhinhaEditMode ? "Modo Editor: clique ou arraste para trocar de lugar" : (p2Data ? (r > 0 && !p2Won && !p2Lost && !p1Data ? "Clique para remover e voltar para a fase anterior" : "Clique para avançar") : "")}
                                         >
                                             {p2Data ? (
                                                 <>
-                                                    <span className="font-semibold truncate text-[11px] md:text-xs">{p2Data.map(mc=>mc.name).join(' / ')}</span>
-                                                    {r > 0 && !p2Won && (
+                                                    <span className="font-semibold truncate text-[11px] md:text-xs flex-1 text-left">{p2Data.map(mc=>mc.name).join(' / ')}</span>
+                                                    <div className="flex items-center gap-1 ml-1 shrink-0">
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                revertParticipantFromSlot(r, m * 2 + 1);
+                                                                setBracketScores(prev => ({
+                                                                    ...prev,
+                                                                    [`${r}_${m}_p2`]: ((prev[`${r}_${m}_p2`] ?? 0) + 1) % 6
+                                                                }));
                                                             }}
-                                                            className="ml-1 p-0.5 rounded-full hover:bg-red-500/30 text-zinc-400 hover:text-red-300 transition-colors"
-                                                            title="Voltar para a fase anterior"
+                                                            className="w-6 h-6 rounded-lg bg-black/40 hover:bg-black/60 border border-white/20 flex items-center justify-center text-[11px] font-bold text-white transition-all shadow-sm"
+                                                            title="Clique para alterar o placar (0 a 5)"
+                                                        >
+                                                            {p2Score}
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setConfirmRemoveFromFolhinha({ isOpen: true, roundIndex: r, slotIndex: slot2Idx, participant: p2Data });
+                                                            }}
+                                                            className="p-0.5 rounded-full hover:bg-red-500/30 text-zinc-400 hover:text-red-300 transition-colors"
+                                                            title={r === 0 ? "Remover da chave e devolver ao chaveamento/sorteio" : "Voltar para a fase anterior"}
                                                         >
                                                             <Icon name="x" size={12} />
                                                         </button>
-                                                    )}
+                                                    </div>
                                                 </>
-                                            ) : <span className="text-[9px] uppercase font-semibold">Aguardando</span>}
+                                            ) : <span className="text-[9px] uppercase font-semibold">{isFolhinhaEditMode && selectedFolhinhaSlot ? 'Mover para cá' : 'Aguardando'}</span>}
                                         </div>
                                     </div>
                                 </div>
@@ -1453,7 +1871,7 @@
                                 className="absolute top-0 right-0 px-4 h-10 apple-btn rounded-full transition-all flex items-center gap-2 text-xs font-semibold cursor-pointer"
                             >
                                 <Icon name="help-circle" size={16} />
-                                <span className="hidden sm:inline">Como usar</span>
+                                <span className="hidden sm:inline">O que é?</span>
                             </button>
 
                             <div className="relative flex flex-col items-center group mt-4">
@@ -1514,14 +1932,47 @@
                                 </div>
                             </div>
 
-                            <div className="mt-6 flex items-center justify-center gap-3 relative z-20">
+                            <div className="mt-6 flex flex-wrap items-center justify-center gap-3 relative z-20">
                                 <button 
-                                    onClick={startShuffle}
-                                    className="apple-btn px-6 h-10 rounded-full font-semibold tracking-wide text-xs flex items-center justify-center gap-2 transition-all cursor-pointer hover:scale-105"
+                                    onClick={() => !isBracketFullInChaveamento && startShuffle()}
+                                    disabled={isBracketFullInChaveamento}
+                                    className={`apple-btn px-6 h-10 rounded-full font-semibold tracking-wide text-xs flex items-center justify-center gap-2 transition-all ${isBracketFullInChaveamento ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:scale-105'}`}
+                                    title={isBracketFullInChaveamento ? "A chave da Folhinha já está completa!" : ""}
                                 >
                                     <Icon name="shuffle" size={16} />
                                     {appMode === 'chaveamento' || appMode === 'folhinha' ? 'Sortear Confronto' : 'Sortear Ordem'}
                                 </button>
+
+                                {appMode === 'chaveamento' && (
+                                    <button 
+                                        onClick={() => configGroupSize >= 2 && executeRandomTeamFill()}
+                                        disabled={configGroupSize < 2}
+                                        className={`apple-btn px-5 h-10 rounded-full font-semibold tracking-wide text-xs flex items-center justify-center gap-2 transition-all ${configGroupSize >= 2 ? 'cursor-pointer hover:scale-105' : 'opacity-40 cursor-not-allowed'}`}
+                                        title={configGroupSize >= 2 ? `Sortear MCs da lista geral e encaixar nos espaços vazios de ${getPluralGroupName()}` : "Disponível apenas a partir do formato de Duplas (2 ou mais)"}
+                                    >
+                                        <Icon name="users" size={16} />
+                                        Sortear {getPluralGroupName()}
+                                    </button>
+                                )}
+
+                                {appMode === 'chaveamento' && (
+                                    <button 
+                                        onClick={() => {
+                                            setDrawnGroups([]);
+                                            setBracketParticipants([]);
+                                            setBracketAdvancements({});
+                                            setBracketScores({});
+                                            setDirectFolhinhaIds([]);
+                                            setWarning('🔄 Memória do sorteio e chave da Folhinha zeradas com sucesso!');
+                                            setTimeout(() => setWarning(''), 3000);
+                                        }}
+                                        disabled={drawnGroups.length === 0 && bracketParticipants.length === 0}
+                                        className={`apple-btn w-10 h-10 flex items-center justify-center rounded-full transition-all ${(drawnGroups.length > 0 || bracketParticipants.length > 0) ? 'cursor-pointer hover:scale-105' : 'opacity-40 cursor-not-allowed'}`}
+                                        title="Zerar a memória do sorteio e limpar a chave da Folhinha"
+                                    >
+                                        <Icon name="rotate-ccw" size={16} />
+                                    </button>
+                                )}
 
                                 <button 
                                     onClick={() => setIsSettingsOpen(true)}
@@ -1560,10 +2011,21 @@
                                             <Icon name="file-edit" size={24} className="text-red-500 red-mode-white"/>
                                             Chave do Torneio
                                         </h2>
-                                        <div className="flex items-center gap-2 sm:gap-3">
+                                        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                                             <span className="text-xs font-semibold text-zinc-400 bg-black/20 px-3 py-1.5 rounded-full border border-white/10">
-                                                {bracketParticipants.length} / {bracketSize} Sorteados
+                                                {bracketParticipants.filter(Boolean).length} / {bracketSize} Sorteados
                                             </span>
+                                            <button 
+                                                onClick={() => {
+                                                    setIsFolhinhaEditMode(!isFolhinhaEditMode);
+                                                    setSelectedFolhinhaSlot(null);
+                                                }}
+                                                className={`px-4 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border ${isFolhinhaEditMode ? 'bg-yellow-500/20 border-yellow-400 text-yellow-300 shadow-[0_0_15px_rgba(250,204,21,0.3)]' : 'apple-btn text-zinc-200 hover:text-white'}`}
+                                                title="Ativar ou desativar o Modo Editor para trocar MCs de posição na chave"
+                                            >
+                                                <Icon name="move" size={14} />
+                                                Modo Editor: {isFolhinhaEditMode ? 'ON' : 'OFF'}
+                                            </button>
                                             <button 
                                                 onClick={handleExportBracket}
                                                 className="apple-btn px-4 py-1.5 rounded-full text-xs font-semibold text-zinc-200 hover:text-white flex items-center gap-1.5 transition-all cursor-pointer"
@@ -1581,6 +2043,14 @@
                                             </button>
                                         </div>
                                     </div>
+                                    {isFolhinhaEditMode && (
+                                        <div className="mx-4 px-4 py-2 rounded-2xl bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 text-xs font-medium flex items-center justify-between">
+                                            <span>✏️ <strong>Modo Editor Ativo:</strong> Clique em um MC e depois clique em qualquer outra vaga (ou arraste) para mudar de lugar ou substituir um pelo outro.</span>
+                                            {selectedFolhinhaSlot && (
+                                                <button onClick={() => setSelectedFolhinhaSlot(null)} className="underline ml-2 text-[11px] font-bold">Cancelar seleção</button>
+                                            )}
+                                        </div>
+                                    )}
                                     {renderBracket()}
                                 </div>
                             </div>
@@ -1620,6 +2090,14 @@
                                                     placeholder="Adicionar novo MC..."
                                                     value={newMcName}
                                                     onChange={(e) => setNewMcName(e.target.value)}
+                                                    onPaste={(e) => {
+                                                        const pasted = e.clipboardData.getData('text');
+                                                        if (/[\r\n]/.test(pasted)) {
+                                                            e.preventDefault();
+                                                            const formatted = pasted.replace(/[\r\n]+/g, ', ');
+                                                            setNewMcName(prev => prev ? `${prev}, ${formatted}` : formatted);
+                                                        }
+                                                    }}
                                                     className="w-full bg-black/20 border border-white/20 rounded-full px-4 py-2.5 text-sm font-medium focus:outline-none focus:border-red-500/50 focus:ring-1 focus:ring-red-500/50 text-zinc-100 transition-all placeholder:text-zinc-400 shadow-inner"
                                                 />
                                                 <button 
@@ -1661,9 +2139,9 @@
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                setAvailableMCs(prev => prev.filter(m => m.id !== mc.id));
+                                                                setConfirmAvailableMcRemoval({ isOpen: true, mc });
                                                             }}
-                                                            className="opacity-0 group-hover:opacity-100 ml-1 p-0.5 rounded-full hover:bg-red-500 hover:text-white text-zinc-400 transition-all cursor-pointer"
+                                                            className="ml-1.5 p-1 rounded-full bg-white/10 hover:bg-red-500 hover:text-white text-zinc-300 transition-all cursor-pointer flex items-center justify-center"
                                                             title="Excluir MC da lista"
                                                         >
                                                             <Icon name="x" size={12} />
@@ -1704,12 +2182,21 @@
                                                 >
                                                     <div className="p-3.5 border-b border-white/10 flex justify-between items-center bg-black/10 rounded-t-3xl">
                                                         <h3 className="font-semibold text-sm text-zinc-100 tracking-tight">{getGroupName()} {numIndex + 1}</h3>
-                                                        <div className="flex items-center gap-2">
+                                                        <div className="flex items-center gap-1.5">
                                                             <span className={`text-[10px] font-semibold px-2 py-1 rounded-full ${
                                                                 isComplete ? 'badge-complete' : 'bg-black/20 text-zinc-300 border border-white/10'
                                                             }`}>
                                                                 {count}/{configGroupSize}
                                                             </span>
+                                                            {count > 0 && (
+                                                                <button 
+                                                                    onClick={() => setConfirmSendToFolhinha({ isOpen: true, trioId: numIndex })}
+                                                                    className="p-1 rounded-full text-zinc-300 hover:text-green-400 hover:bg-green-500/10 transition-colors cursor-pointer"
+                                                                    title="Enviar diretamente para a Folhinha"
+                                                                >
+                                                                    <Icon name="file-edit" size={14} />
+                                                                </button>
+                                                            )}
                                                             <button 
                                                                 onClick={() => setConfirmTrioRemoval({ isOpen: true, trioId: trioIndex })}
                                                                 className="p-1 rounded-full text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
@@ -1801,7 +2288,7 @@
 
                     <footer className="mt-12 text-center text-xs text-zinc-400 relative z-10 py-6 border-t border-white/10 font-medium tracking-wide">
                         <p>Criado por Vitor Carvalho. Sugestões? Fale comigo no instagram: <a href="https://www.instagram.com/ovitorcarvalho/" target="_blank" rel="noopener noreferrer" className="text-red-500 hover:text-red-400 hover:underline transition-colors">@ovitorcarvalho</a></p>
-                        <p className="mt-2 text-[10px] opacity-40">Versão 3.0</p>
+                        <p className="mt-2 text-[10px] opacity-40">Versão 3.1 - Última atualização Out/2026</p>
                     </footer>
                     
                     {confirmDialog.isOpen && (
@@ -1838,6 +2325,60 @@
                         </div>
                     )}
 
+                    {confirmAvailableMcRemoval.isOpen && (
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-2xl">
+                            <div className="animate-modal-pop apple-glass p-8 rounded-[2rem] max-w-sm w-full relative text-center">
+                                <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center border border-red-500/40 text-red-500 mx-auto mb-5 shadow-inner">
+                                    <Icon name="trash-2" size={32} strokeWidth={1.5} />
+                                </div>
+                                <h2 className="text-xl font-semibold tracking-tight text-zinc-100">Remover MC da Lista?</h2>
+                                <p className="text-sm text-zinc-300 mt-3 leading-relaxed">Você deseja realmente remover <strong className="text-always-red font-bold text-red-400">{confirmAvailableMcRemoval.mc?.name}</strong> da lista de MCs?</p>
+                                
+                                <div className="flex gap-3 w-full mt-8">
+                                    <button onClick={() => setConfirmAvailableMcRemoval({ isOpen: false, mc: null })} className="flex-1 py-3.5 bg-white/10 hover:bg-white/20 text-zinc-100 text-sm font-semibold rounded-2xl cursor-pointer transition-colors backdrop-blur-md">Cancelar</button>
+                                    <button onClick={() => {
+                                        setAvailableMCs(prev => prev.filter(m => m.id !== confirmAvailableMcRemoval.mc?.id));
+                                        setConfirmAvailableMcRemoval({ isOpen: false, mc: null });
+                                    }} className="modal-red-btn flex-1 py-3.5 bg-red-600 hover:bg-red-500 text-white text-sm font-semibold rounded-2xl cursor-pointer shadow-md shadow-red-600/20 transition-all">Remover</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {confirmSendToFolhinha.isOpen && (
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-2xl">
+                            <div className="animate-modal-pop apple-glass p-8 rounded-[2rem] max-w-sm w-full relative text-center">
+                                <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center border border-green-500/40 text-green-400 mx-auto mb-5 shadow-inner">
+                                    <Icon name="file-edit" size={32} strokeWidth={1.5} />
+                                </div>
+                                <h2 className="text-xl font-semibold tracking-tight text-zinc-100">Enviar para a Folhinha?</h2>
+                                <p className="text-sm text-zinc-300 mt-3 leading-relaxed">Deseja enviar <strong className="text-white font-semibold">{trios[confirmSendToFolhinha.trioId]?.map(m => m.name).join(' / ')}</strong> diretamente para a chave do Modo Folhinha sem precisar de sorteio?</p>
+                                
+                                <div className="flex gap-3 w-full mt-8">
+                                    <button onClick={() => setConfirmSendToFolhinha({ isOpen: false, trioId: null })} className="flex-1 py-3.5 bg-white/10 hover:bg-white/20 text-zinc-100 text-sm font-semibold rounded-2xl cursor-pointer transition-colors backdrop-blur-md">Cancelar</button>
+                                    <button onClick={() => executeDirectSendToFolhinha(confirmSendToFolhinha.trioId)} className="modal-red-btn flex-1 py-3.5 bg-red-600 hover:bg-red-500 text-white text-sm font-semibold rounded-2xl cursor-pointer shadow-md shadow-red-600/20 transition-all">Confirmar</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {confirmRemoveFromFolhinha.isOpen && (
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-2xl">
+                            <div className="animate-modal-pop apple-glass p-8 rounded-[2rem] max-w-sm w-full relative text-center">
+                                <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center border border-red-500/40 text-red-500 mx-auto mb-5 shadow-inner">
+                                    <Icon name="trash-2" size={32} strokeWidth={1.5} />
+                                </div>
+                                <h2 className="text-xl font-semibold tracking-tight text-zinc-100">Remover da Chave?</h2>
+                                <p className="text-sm text-zinc-300 mt-3 leading-relaxed">Deseja remover <strong className="text-always-red font-bold text-red-400">{confirmRemoveFromFolhinha.participant?.map(m => m.name).join(' / ')}</strong> da chave do torneio e devolvê-lo para o chaveamento/sorteio?</p>
+                                
+                                <div className="flex gap-3 w-full mt-8">
+                                    <button onClick={() => setConfirmRemoveFromFolhinha({ isOpen: false, roundIndex: null, slotIndex: null, participant: null })} className="flex-1 py-3.5 bg-white/10 hover:bg-white/20 text-zinc-100 text-sm font-semibold rounded-2xl cursor-pointer transition-colors backdrop-blur-md">Cancelar</button>
+                                    <button onClick={executeRemoveFromFolhinha} className="modal-red-btn flex-1 py-3.5 bg-red-600 hover:bg-red-500 text-white text-sm font-semibold rounded-2xl cursor-pointer shadow-md shadow-red-600/20 transition-all">Remover</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {confirmGoToChaveamento && (
                         <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/60 backdrop-blur-2xl">
                             <div className="animate-modal-pop apple-glass p-8 rounded-[2rem] max-w-sm w-full relative text-center">
@@ -1847,6 +2388,13 @@
                                 <h2 className="text-xl font-semibold tracking-tight text-zinc-100">Ir pro Chaveamento?</h2>
                                 <p className="text-sm text-zinc-300 mt-3 leading-relaxed">Deseja transferir todos os grupos formados atualmente para o <strong className="text-white">Modo Chaveamento</strong> mantendo a mesma ordem e formato para sortear os confrontos?</p>
                                 
+                                {hasIncompleteGroupsInDraft && (
+                                    <div className="mt-4 p-3.5 rounded-2xl bg-yellow-500/20 border border-yellow-500/40 text-yellow-300 text-xs font-semibold leading-relaxed flex items-center justify-center gap-2">
+                                        <Icon name="alert-triangle" size={16} className="shrink-0 text-yellow-400" />
+                                        <span>Atenção: Os {getPluralGroupName()} estão incompletos! Deseja transferir mesmo assim?</span>
+                                    </div>
+                                )}
+
                                 <div className="flex gap-3 w-full mt-8">
                                     <button onClick={() => setConfirmGoToChaveamento(false)} className="flex-1 py-3.5 bg-white/10 hover:bg-white/20 text-zinc-100 text-sm font-semibold rounded-2xl cursor-pointer transition-colors backdrop-blur-md">Cancelar</button>
                                     <button onClick={handleGoToChaveamentoConfirm} className="modal-red-btn flex-1 py-3.5 bg-red-600 hover:bg-red-500 text-white text-sm font-semibold rounded-2xl cursor-pointer shadow-md shadow-red-600/20 transition-all">Transferir</button>
@@ -1896,7 +2444,7 @@
                                 </div>
                                 <h2 className="text-xs md:text-sm font-semibold tracking-widest text-zinc-400 uppercase mb-2">Sorteado</h2>
                                 <h3 className="text-2xl md:text-3xl font-unbounded font-bold text-white mb-4 md:mb-6 uppercase">
-                                    {configGroupSize === 1 ? 'MC' : getGroupName()} {Number(drawnResultModal.groupIndex) + 1}
+                                    {getGroupName()} {Number(drawnResultModal.groupIndex) + 1}
                                 </h3>
                                 
                                 <div className="space-y-2.5 md:space-y-3 mb-6 md:mb-8 max-h-[40vh] overflow-y-auto">
@@ -1907,9 +2455,24 @@
                                         </div>
                                     ))}
                                 </div>
+
+                                {drawnResultModal.matchupOpponent && (
+                                    <div className="mb-4 p-3.5 rounded-2xl bg-red-500/20 border border-red-500/40 text-white shadow-inner">
+                                        <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-300 mb-1">Confronto na Folhinha</div>
+                                        <div className="text-sm md:text-base font-unbounded font-bold text-white">
+                                            {drawnResultModal.result.map(m => m.name).join(' / ')} <span className="text-always-red mx-1">x</span> {drawnResultModal.matchupOpponent.map(m => m.name).join(' / ')}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {(bracketParticipants.filter(Boolean).length === bracketSize || (Object.values(trios).filter(g => g.length > 0).length > 0 && drawnGroups.length >= Object.values(trios).filter(g => g.length > 0).length)) && (
+                                    <div className="mb-4 p-3 rounded-2xl bg-green-500/20 border border-green-500/40 text-green-300 text-xs font-bold tracking-wide">
+                                        Todos os {getPluralGroupName()} já foram sorteados!
+                                    </div>
+                                )}
                                 
                                 <div className="flex flex-col gap-2.5">
-                                    {(bracketParticipants.length === bracketSize || (Object.values(trios).filter(g => g.length > 0).length > 0 && drawnGroups.length >= Object.values(trios).filter(g => g.length > 0).length)) && (
+                                    {(bracketParticipants.filter(Boolean).length === bracketSize || (Object.values(trios).filter(g => g.length > 0).length > 0 && drawnGroups.length >= Object.values(trios).filter(g => g.length > 0).length)) && (
                                         <button 
                                             onClick={handleCopyDrawnAndNotDrawn}
                                             className="w-full py-3 bg-white/10 hover:bg-white/20 border border-white/20 text-zinc-100 text-xs md:text-sm font-semibold uppercase tracking-wider rounded-2xl cursor-pointer transition-all flex items-center justify-center gap-2"
@@ -1919,7 +2482,7 @@
                                         </button>
                                     )}
                                     <button 
-                                        onClick={() => setDrawnResultModal({ isOpen: false, result: null, groupIndex: null })} 
+                                        onClick={() => setDrawnResultModal({ isOpen: false, result: null, groupIndex: null, matchupOpponent: null })} 
                                         className="modal-red-btn w-full py-3.5 md:py-4 bg-red-600 hover:bg-red-500 text-white text-xs md:text-sm font-bold uppercase tracking-widest rounded-2xl cursor-pointer shadow-lg shadow-red-600/30 transition-all"
                                     >
                                         Continuar
@@ -1935,7 +2498,7 @@
                                     <Icon name="alert-triangle" size={32} strokeWidth={1.5} />
                                 </div>
                                 <h2 className="text-xl font-semibold tracking-tight text-zinc-100">Reiniciar Sorteio?</h2>
-                                <p className="text-sm text-zinc-300 mt-3 leading-relaxed">Todos os grupos já foram sorteados. Deseja reiniciar a lista de sorteados e começar novamente?</p>
+                                <p className="text-sm text-zinc-300 mt-3 leading-relaxed">Todos os {getPluralGroupName()} já foram sorteados. Deseja reiniciar a lista de sorteados e começar novamente?</p>
                                 
                                 <div className="flex flex-col gap-3 w-full mt-6">
                                     <button 
@@ -1949,6 +2512,10 @@
                                         <button onClick={() => setConfirmRestartDraw(false)} className="flex-1 py-3.5 bg-white/10 hover:bg-white/20 text-zinc-100 text-sm font-semibold rounded-2xl cursor-pointer transition-colors backdrop-blur-md">Cancelar</button>
                                         <button onClick={() => {
                                             setDrawnGroups([]);
+                                            setBracketParticipants([]);
+                                            setBracketAdvancements({});
+                                            setBracketScores({});
+                                            setDirectFolhinhaIds([]);
                                             setConfirmRestartDraw(false);
                                         }} className="modal-red-btn flex-1 py-3.5 bg-red-600 hover:bg-red-500 text-white text-sm font-semibold rounded-2xl cursor-pointer shadow-md shadow-red-600/20 transition-all">Reiniciar</button>
                                     </div>
@@ -1964,13 +2531,40 @@
                                     <Icon name="trash-2" size={32} strokeWidth={1.5} />
                                 </div>
                                 <h2 className="text-xl font-semibold tracking-tight text-zinc-100">Limpar Chave?</h2>
-                                <p className="text-sm text-zinc-300 mt-3 leading-relaxed">Deseja limpar toda a chave do torneio no Modo Folhinha?</p>
+                                <p className="text-sm text-zinc-300 mt-3 leading-relaxed">Deseja limpar toda a chave do torneio no Modo Folhinha e devolver todos os participantes para o Chaveamento?</p>
                                 
                                 <div className="flex gap-3 w-full mt-8">
                                     <button onClick={() => setConfirmClearBracket(false)} className="flex-1 py-3.5 bg-white/10 hover:bg-white/20 text-zinc-100 text-sm font-semibold rounded-2xl cursor-pointer transition-colors backdrop-blur-md">Cancelar</button>
                                     <button onClick={() => {
+                                        const participantsToReturn = bracketParticipants.filter(Boolean);
+                                        if (participantsToReturn.length > 0) {
+                                            setTrios(currentTrios => {
+                                                const updated = { ...currentTrios };
+                                                participantsToReturn.forEach(participantGroup => {
+                                                    const alreadyInTrios = Object.values(updated).some(
+                                                        box => box.length > 0 && box[0]?.id === participantGroup[0]?.id
+                                                    );
+                                                    if (!alreadyInTrios) {
+                                                        const existingKeys = Object.keys(updated).map(Number);
+                                                        const emptyKey = existingKeys.find(k => updated[k].length === 0);
+                                                        if (emptyKey !== undefined) {
+                                                            updated[emptyKey] = participantGroup;
+                                                        } else {
+                                                            const nextIndex = existingKeys.length > 0 ? Math.max(...existingKeys) + 1 : 0;
+                                                            updated[nextIndex] = participantGroup;
+                                                        }
+                                                    }
+                                                });
+                                                return compactTriosMap(updated);
+                                            });
+                                        }
+                                        setDrawnGroups([]);
                                         setBracketParticipants([]);
                                         setBracketAdvancements({});
+                                        setBracketScores({});
+                                        setDirectFolhinhaIds([]);
+                                        setLastEliminatedMcs([]);
+                                        setSelectedFolhinhaSlot(null);
                                         setConfirmClearBracket(false);
                                     }} className="modal-red-btn flex-1 py-3.5 bg-red-600 hover:bg-red-500 text-white text-sm font-semibold rounded-2xl cursor-pointer shadow-md shadow-red-600/20 transition-all">Limpar</button>
                                 </div>
@@ -2033,9 +2627,9 @@
                                     {appMode !== 'folhinha' && (
                                         <div className="flex flex-col gap-3">
                                             <div className="flex justify-between items-center">
-                                                <label className="font-medium text-zinc-100 tracking-tight">Tamanho do Grupo</label>
+                                                <label className="font-medium text-zinc-100 tracking-tight">Formato da Batalha</label>
                                                 <span className="text-red-500 font-semibold bg-red-500/20 px-2 py-0.5 rounded-md settings-badge">
-                                                    {configGroupSize === 1 ? 'MC' : configGroupSize === 2 ? 'Dupla' : configGroupSize === 3 ? 'Trio' : configGroupSize === 4 ? 'Quarteto' : 'Quinteto'} ({configGroupSize})
+                                                    {configGroupSize === 1 ? 'Solo' : configGroupSize === 2 ? 'Dupla' : configGroupSize === 3 ? 'Trio' : configGroupSize === 4 ? 'Quarteto' : 'Quinteto'} ({configGroupSize})
                                                 </span>
                                             </div>
                                             <input 
@@ -2060,6 +2654,7 @@
                                                         onClick={() => {
                                                             setBracketSize(size);
                                                             setBracketAdvancements({});
+                                                            setBracketScores({});
                                                         }}
                                                         className={`py-2 rounded-xl font-bold text-xs transition-all cursor-pointer border ${bracketSize === size ? 'bg-red-600 text-white border-red-500 shadow-md settings-concluir-btn' : 'bg-white/5 text-zinc-300 border-white/10 hover:bg-white/10'}`}
                                                     >
@@ -2099,7 +2694,7 @@
                     {isHelpOpen && (
                         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/40 backdrop-blur-2xl">
                             <div 
-                                className="trio-tilt-card animate-modal-pop apple-glass p-8 rounded-[2rem] max-w-xl w-full relative"
+                                className="trio-tilt-card animate-modal-pop apple-glass p-6 md:p-8 rounded-[2rem] max-w-3xl w-full relative"
                                 onMouseMove={handleCardMouseMove}
                                 onMouseLeave={handleCardMouseLeave}
                             >
@@ -2110,28 +2705,241 @@
                                     <Icon name="x" size={18} />
                                 </button>
                                 
-                                <div className="flex items-center gap-4 mb-8">
-                                    <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center border border-white/20 text-zinc-100 shadow-inner">
+                                <div className="flex items-center gap-4 mb-6">
+                                    <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center border border-white/20 text-zinc-100 shadow-inner shrink-0">
                                         <Icon name="info" size={20} strokeWidth={1.5} />
                                     </div>
-                                    <h2 className="text-xl font-semibold tracking-tight text-zinc-100">Como usar o site</h2>
+                                    <div>
+                                        <h2 className="text-xl font-semibold tracking-tight text-zinc-100">O que é? — Manual Completo</h2>
+                                        <p className="text-xs text-zinc-400">Guia Geral e Operacional — Batalha da Torre</p>
+                                    </div>
                                 </div>
                                 
-                                <div className="space-y-4 text-sm text-zinc-300 leading-relaxed overflow-y-auto max-h-[60vh] pr-4 font-medium">
-                                    <p><strong className="text-white">Modo Draft:</strong> Nesse modo você pode adicionar todos os mc's participantes, definir os capitães e sortear a ordem de escolhas dos integrantes. Feito para facilitar a escolha dos grupos de forma fluida e simples.</p>
-                                    <p><strong className="text-white">Modo Chaveamento:</strong> Nesse modo você pode adicionar todos os mc's (basta clicar no nome deles para auto-adicionar nas caixas) e sortear a ordem individual dos confrontos. Feito para sortear a ordem de confrontos de uma batalha, assim dispensando utilização sorteio no papel ou em sites externos.</p>
-                                    <p><strong className="text-white">Modo Folhinha:</strong> Visualize e gerencie a chave do torneio. Os MCs/Grupos sorteados no Modo Chaveamento são enviados automaticamente para cá. Clique nos vencedores para avançá-los de fase até a final!</p>
-                                    <hr className="border-white/10 my-4" />
-                                    <p><strong className="text-white">1. Adicionar MC's:</strong> Digite o nome do MC na barra lateral (ou cole uma lista separada por vírgulas/linhas) e clique no "+" ou aperte "Enter".</p>
-                                    <p><strong className="text-yellow-400">2. Capitães (Cor Dourada - Draft):</strong> Arraste o MC para o 1º espaço de qualquer trio para marcá-lo como Capitão.</p>
-                                    <p><strong className="text-green-400">3. Formar Grupos:</strong> Arraste os outros MC's para preencher as caixas. Com as pessoas suficientes, a borda ficará verde indicando completo.</p>
-                                    <p><strong className="text-always-red text-red-400">4. Sortear Ordem:</strong> Clique no botão no topo. Ele embaralhará todas as posições (Draft), sorteará um participante para a chave (Chaveamento) ou embaralhará os confrontos da fase atual (Folhinha).</p>
-                                    <p><strong className="text-blue-400">5. Customizar:</strong> Clique no Título "Batalha da Torre" para editá-lo e mudar a cor. Clique na Logo para alterar a imagem.</p>
+                                <div className="space-y-6 text-sm text-zinc-300 leading-relaxed overflow-y-auto max-h-[65vh] pr-3 font-medium">
+                                    <p>
+                                        O <strong className="text-white italic">Draft da Batalha da Torre</strong> é uma aplicação web completa desenvolvida para gestão, sorteio e chaveamento de batalhas de rima e torneios de freestyle. O objetivo principal do sistema é extinguir completamente a necessidade de sorteios em papel, tabelas manuais ou sites externos de chaveamento, centralizando tudo em uma interface fluida, visualmente imersiva e responsiva (ideal para computadores, celulares e projeções em telões).
+                                    </p>
+
+                                    <hr className="border-white/10" />
+
+                                    <div className="space-y-3">
+                                        <h3 className="text-base font-bold text-white">1. Identidade Visual e Controles Globais</h3>
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-200">🎨 Seletores de Tema (Canto Superior Esquerdo)</h4>
+                                        <p>A plataforma oferece três estilos visuais pensados para diferentes iluminações de evento:</p>
+                                        <ul className="list-disc pl-5 space-y-1.5">
+                                            <li><strong className="text-white">Modo Escuro (Ícone de Lua):</strong> Fundo preto com visual <em>Apple Glass</em> translúcido escuro, grid sutil em vermelho e iluminação ambiente azul/branca. Ideal para telões e ambientes noturnos.</li>
+                                            <li><strong className="text-white">Modo Claro (Ícone de Sol):</strong> Fundo claro e limpo, garantindo alta visibilidade sob luz solar direta em batalhas diurnas.</li>
+                                            <li><strong className="text-white">Modo Vermelho (Ícone de Chama):</strong> Fundo vermelho vibrante temático da Batalha da Torre com proteções automáticas de contraste para que textos de aviso, ícones e placares continuem 100% legíveis.</li>
+                                        </ul>
+
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-200 pt-2">🖼️ Personalização de Marca (Logo e Título)</h4>
+                                        <ul className="list-disc pl-5 space-y-1.5">
+                                            <li><strong className="text-white">Logo do Evento:</strong> Clique sobre o ícone central com as espadas cruzadas para carregar a imagem ou logotipo oficial da sua batalha. Ao carregar a imagem, surge uma barra deslizante lateral para aplicar zoom e enquadrar perfeitamente a logo.</li>
+                                            <li><strong className="text-white">Título Editável:</strong> Clique sobre o texto <em>"Batalha da Torre"</em> para alterar o nome do evento. Ao passar o mouse sobre o título, uma ferramenta de cor permite definir qualquer tonalidade para a tipografia.</li>
+                                        </ul>
+
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-200 pt-2">🛡️ Proteção Contra Fechamento Acidental</h4>
+                                        <p>O sistema possui bloqueio nativo, impedindo que o navegador seja fechado ou recarregado sem antes alertar, prevenindo a perda acidental do progresso do evento.</p>
+                                    </div>
+
+                                    <hr className="border-white/10" />
+
+                                    <div className="space-y-3">
+                                        <h3 className="text-base font-bold text-white">2. Lista Lateral de MC's</h3>
+                                        <p>Localizada na coluna esquerda, esta seção serve como o banco de dados dos participantes inscritos.</p>
+                                        <ul className="list-disc pl-5 space-y-1.5">
+                                            <li>
+                                                <strong className="text-white">Adição Inteligente e em Lote:</strong> O campo aceita:
+                                                <ul className="list-circle pl-5 mt-1 space-y-1 text-xs text-zinc-300">
+                                                    <li>Digitação de nomes individuais (apertando <em>Enter</em> ou clicando no botão <code>+</code>).</li>
+                                                    <li>Colar listas separadas por vírgula (ex: <code>JayA Luuck, Japa, Monarka, Jaz</code>).</li>
+                                                    <li>Colar listas com quebras de linha.</li>
+                                                    <li>Colar listas numeradas ou com marcadores (ex: <code>1. MC 1</code>, <code>2 - MC 2</code>, <code>• MC 3</code>). O sistema remove automaticamente números e pontos, cadastrando cada nome individualmente.</li>
+                                                </ul>
+                                            </li>
+                                            <li><strong className="text-white">Proteção Antiduplicidade:</strong> O sistema impede o cadastro de MCs repetidos. Se um nome já estiver na lista ou dentro de alguma chave, ele avisa na tela e ignora a duplicação.</li>
+                                            <li><strong className="text-white">Autoalocação com 1 Clique (Modo Chaveamento):</strong> Basta clicar diretamente em cima do nome de qualquer MC na lista para que ele seja automaticamente transferido para o primeiro espaço livre das caixas.</li>
+                                            <li><strong className="text-white">Arraste e Solte (Drag-and-Drop):</strong> Arraste o MC da lista e solte-o exatamente dentro da caixa desejada.</li>
+                                            <li><strong className="text-white">Exclusão Segura:</strong> Ao lado de cada nome há um ícone de <code>X</code>. Para evitar toques acidentais, clicar no <code>X</code> abre um popup de confirmação perguntando se você realmente deseja excluir o MC.</li>
+                                            <li><strong className="text-white">Copiar e Compartilhar Lista:</strong> O botão de cópia no topo da lista gera a lista numerada em ordem alfabética e abre o compartilhamento nativo para WhatsApp ou redes sociais.</li>
+                                        </ul>
+                                    </div>
+
+                                    <hr className="border-white/10" />
+
+                                    <div className="space-y-3">
+                                        <h3 className="text-base font-bold text-white">3. Modo Chaveamento</h3>
+                                        <p>O Modo Chaveamento é a área onde os confrontos da batalha são preparados e sorteados.</p>
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-200">📦 As Caixas de Batalha (Boxes)</h4>
+                                        <ul className="list-disc pl-5 space-y-1.5">
+                                            <li><strong className="text-white">Padrão Inicial:</strong> Abre com 1 caixa por padrão e se expande conforme a necessidade.</li>
+                                            <li>
+                                                <strong className="text-white">Cores Indicativas:</strong>
+                                                <ul className="list-circle pl-5 mt-1 space-y-1 text-xs text-zinc-300">
+                                                    <li><strong className="text-zinc-200">Neutra:</strong> Caixa vazia pronta para receber participantes.</li>
+                                                    <li><strong className="text-yellow-400">Amarela:</strong> Caixa incompleta (ex: formato de duplas com apenas 1 integrante).</li>
+                                                    <li><strong className="text-green-400">Verde:</strong> Caixa completa e pronta para o sorteio.</li>
+                                                </ul>
+                                            </li>
+                                            <li><strong className="text-white">Remoção de Integrantes:</strong> Clicar em um MC dentro da caixa remove-o e o devolve para a lista de MC's.</li>
+                                        </ul>
+
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-200 pt-2">🎲 Botões de Ação do Cabeçalho</h4>
+                                        <ol className="list-decimal pl-5 space-y-2">
+                                            <li>
+                                                <strong className="text-white">Sortear Confronto:</strong>
+                                                <ul className="list-disc pl-5 mt-1 space-y-1 text-xs">
+                                                    <li>Realiza a contagem regressiva e sorteia um MC/equipe aleatoriamente.</li>
+                                                    <li>O sorteado é posicionado automaticamente na chave do <strong className="text-white">Modo Folhinha</strong>.</li>
+                                                    <li>Ao finalizar, um popup exibe o nome sorteado. Se o sorteado cair contra um oponente que já estava esperando na chave, o popup avisa imediatamente: <code>[MC Sorteado] x [MC Oponente]</code>.</li>
+                                                </ul>
+                                            </li>
+                                            <li>
+                                                <strong className="text-white">Sortear Equipes (Duplas / Trios / etc.):</strong>
+                                                <ul className="list-disc pl-5 mt-1 space-y-1 text-xs">
+                                                    <li>Fica ativo quando o formato da batalha for para 2 ou mais integrantes.</li>
+                                                    <li>Ao ser clicado, busca nomes aleatórios da lista de MC's e preenche todos os espaços vazios das caixas com uma animação de 5 mudanças antes de fixar os nomes.</li>
+                                                </ul>
+                                            </li>
+                                            <li>
+                                                <strong className="text-white">Zerar a Memória do Sorteio (Ícone circular):</strong>
+                                                <ul className="list-disc pl-5 mt-1 space-y-1 text-xs">
+                                                    <li>Redefine os sorteados e limpa a chave da Folhinha sem a necessidade de recarregar a página.</li>
+                                                </ul>
+                                            </li>
+                                            <li>
+                                                <strong className="text-white">Envio Direto para a Folhinha (Ícone no topo de cada Box):</strong>
+                                                <ul className="list-disc pl-5 mt-1 space-y-1 text-xs">
+                                                    <li>Se um MC ou dupla for cabeça de chave ou precisar entrar na Folhinha sem sorteio, clique no ícone da Folhinha na caixa dele.</li>
+                                                    <li>Após a confirmação, o sistema aloca o participante em uma vaga aleatória da chave do torneio e já remove a caixa dele do Chaveamento.</li>
+                                                </ul>
+                                            </li>
+                                        </ol>
+
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-200 pt-2">🧹 Limpeza Automática ao Completar as Vagas</h4>
+                                        <p>Assim que o número total de vagas da chave (definido nas configurações: 4, 8, 16 ou 32) é preenchido:</p>
+                                        <ul className="list-disc pl-5 space-y-1.5">
+                                            <li>Os participantes sorteados saem das caixas do Chaveamento (pois já estão na Folhinha).</li>
+                                            <li>As caixas passam a conter <strong className="text-white">apenas os MCs que não foram sorteados</strong>.</li>
+                                            <li>O popup final exibe o botão <strong className="text-white">"Copiar nomes"</strong>, gerando um relatório dividido entre <code>Mc's Sorteados</code> e <code>Mc's não sorteados</code>.</li>
+                                        </ul>
+                                    </div>
+
+                                    <hr className="border-white/10" />
+
+                                    <div className="space-y-3">
+                                        <h3 className="text-base font-bold text-white">4. Modo Folhinha (A Chave do Torneio Digital)</h3>
+                                        <p>O Modo Folhinha é o painel de árvore de torneio (mata-mata) onde o campeonato acontece em tempo real.</p>
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-200">🌳 Estrutura da Chave</h4>
+                                        <ul className="list-disc pl-5 space-y-1">
+                                            <li><strong className="text-white">32 vagas:</strong> 16 avos ➔ Oitavas ➔ Quartas ➔ Semifinal ➔ Final ➔ Campeão.</li>
+                                            <li><strong className="text-white">16 vagas:</strong> Oitavas ➔ Quartas ➔ Semifinal ➔ Final ➔ Campeão.</li>
+                                            <li><strong className="text-white">8 vagas:</strong> Quartas ➔ Semifinal ➔ Final ➔ Campeão.</li>
+                                            <li><strong className="text-white">4 vagas:</strong> Semifinal ➔ Final ➔ Campeão.</li>
+                                        </ul>
+
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-200 pt-2">⚔️ Gestão de Batalhas e Avanço</h4>
+                                        <ul className="list-disc pl-5 space-y-1.5">
+                                            <li><strong className="text-white">Contador de Placar (0 a 5):</strong> Cada card possui um botão numérico. Clicar nele aumenta a pontuação de 0 a 5 (com retorno a 0), registrando os votos dos jurados ou rounds ganhos.</li>
+                                            <li><strong className="text-white">Avançar Vencedor:</strong> Clique sobre a caixa do MC que ganhou o duelo. Ele avançará automaticamente para a casa do confronto seguinte.</li>
+                                            <li><strong className="text-white">Desfazer / Voltar Fase:</strong> Clicar novamente no participante que acabou de avançar na fase seguinte desfaz o avanço e restaura a batalha anterior.</li>
+                                            <li><strong className="text-white">Indicação Visual de Resultado:</strong> Na etapa anterior, o participante que venceu fica com a moldura <strong className="text-green-400">verde</strong>, enquanto o que perdeu fica destacado em <strong className="text-always-red text-red-400">vermelho</strong>.</li>
+                                            <li><strong className="text-white">Eliminação Automática:</strong> Ao declarar o vencedor na Folhinha, o sistema localiza o perdedor no Modo Chaveamento e o elimina automaticamente.</li>
+                                        </ul>
+
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-200 pt-2">✏️ Modo Editor (ON / OFF)</h4>
+                                        <ul className="list-disc pl-5 space-y-1.5">
+                                            <li>Se houver algum erro de montagem ou desistência, ative o botão <strong className="text-yellow-300">"Modo Editor: ON"</strong>.</li>
+                                            <li>Clique em um MC e em seguida clique em qualquer outra vaga da chave (ou simplesmente arraste e solte com o mouse).</li>
+                                            <li>Se a vaga de destino estiver vazia, ele será movido; se já estiver ocupada, os dois MCs <strong className="text-white">trocarão de lugar</strong>.</li>
+                                        </ul>
+
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-200 pt-2">🎲 Sortear Confronto dentro da Folhinha</h4>
+                                        <p>Clicar em "Sortear Confronto" dentro da Folhinha identifica a fase atual do torneio e embaralha aleatoriamente as posições dos confrontos em 5 trocas dinâmicas, sem atraso de contagem regressiva.</p>
+
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-200 pt-2">📤 Exportar Chave e Limpeza</h4>
+                                        <ul className="list-disc pl-5 space-y-1.5">
+                                            <li><strong className="text-white">Exportar chave:</strong> Copia o status completo de todas as fases, confrontos e placares formatados para texto, pronto para divulgação no Instagram ou grupos de WhatsApp.</li>
+                                            <li><strong className="text-white">Limpar:</strong> Zera a chave do torneio e devolve todos os MCs cadastrados de volta para as caixas do Modo Chaveamento.</li>
+                                        </ul>
+                                    </div>
+
+                                    <hr className="border-white/10" />
+
+                                    <div className="space-y-3">
+                                        <h3 className="text-base font-bold text-white">5. Modo Draft (Seleção de Capitães e Equipes)</h3>
+                                        <p>Modo dedicado para quando a batalha for disputada em trios, duplas ou quintetos e os capitães forem escolher seus companheiros.</p>
+                                        <ol className="list-decimal pl-5 space-y-1.5">
+                                            <li><strong className="text-yellow-400">Definição de Capitães:</strong> Arraste o MC para o primeiro espaço (identificado com borda dourada e coroa) para marcá-lo como Capitão.</li>
+                                            <li><strong className="text-white">Sortear a Ordem de Escolha:</strong> Clique no botão "Sortear Ordem". O sistema fará os trios/grupos trocarem de lugar 5 vezes na tela, definindo aleatoriamente a ordem em que os capitães escolhem seus parceiros.</li>
+                                            <li><strong className="text-green-400">Formação dos Grupos:</strong> Conforme os capitães escolhem, arraste os MCs restantes para dentro de cada caixa.</li>
+                                            <li><strong className="text-white">Ir pro Chaveamento:</strong> Assim que os grupos estiverem prontos, clique no botão central "Ir pro Chaveamento". Caso algum grupo esteja incompleto, o popup avisará antes da confirmação. Ao transferir, toda a estrutura formada é enviada para o Modo Chaveamento e o sistema reconhece e ajusta automaticamente o tamanho da chave (ex: 8 trios ajustam a chave para 8 vagas).</li>
+                                        </ol>
+                                    </div>
+
+                                    <hr className="border-white/10" />
+
+                                    <div className="space-y-3">
+                                        <h3 className="text-base font-bold text-white">6. Painel de Configurações (Ícone de Engrenagem)</h3>
+                                        <p>Acessível no topo do site, permite calibrar o evento:</p>
+                                        <ul className="list-disc pl-5 space-y-1.5">
+                                            <li><strong className="text-white">Tempo de Contagem:</strong> Define a duração da contagem regressiva nos sorteios (de 1s a 15s).</li>
+                                            <li><strong className="text-white">Quantidade de Mudanças (Draft):</strong> Define quantas vezes os cards trocam de lugar na animação de sorteio (de 1x a 10x).</li>
+                                            <li><strong className="text-white">Formato da Batalha:</strong> Alterna entre Solo (1), Dupla (2), Trio (3), Quarteto (4) ou Quinteto (5).</li>
+                                            <li><strong className="text-white">Tamanho da Chave:</strong> Ajusta a quantidade total de vagas do torneio entre 4, 8, 16 ou 32 vagas (configuração unificada entre Chaveamento e Folhinha).</li>
+                                            <li><strong className="text-white">Repetição no Sorteio:</strong> Chave para permitir ou proibir que um mesmo participante seja sorteado mais de uma vez.</li>
+                                        </ul>
+                                    </div>
+
+                                    <hr className="border-white/10" />
+
+                                    <div className="space-y-3">
+                                        <h3 className="text-base font-bold text-white">7. Fluxo Recomendado para um Evento Oficial</h3>
+                                        <pre className="bg-black/30 border border-white/10 rounded-2xl p-4 text-xs text-zinc-200 overflow-x-auto leading-snug font-mono">{`[1. Inscrições]
+   │
+   ▼
+Adicione todos os nomes colando a lista no menu "Lista de MC's".
+   │
+   ▼
+[2. Configuração do Evento]
+   │
+   ▼
+Abra a engrenagem e selecione o "Formato da Batalha" (Solo, Dupla, etc.) 
+e o "Tamanho da Chave" (ex: 16 vagas).
+   │
+   ▼
+[3. Formação das Caixas (Se Duplas/Trios)]
+   │
+   ├─► Opção A: Clique em "Sortear Duplas" para formar os times aleatoriamente.
+   └─► Opção B: Arraste os MC's para as vagas disponíveis.
+   │
+   ▼
+[4. Sorteio dos Confrontos]
+   │
+   ▼
+No Modo Chaveamento, clique em "Sortear Confronto" sucessivamente.
+Os nomes vão sendo alocados direto na chave da Folhinha.
+   │
+   ▼
+[5. Realização das Batalhas (Modo Folhinha)]
+   │
+   ▼
+Mude para o "Modo Folhinha":
+  • Anote os placares (0 a 5) ao lado de cada MC.
+  • Clique no vencedor de cada duelo para avançá-lo de fase.
+  • Repita até a grande final para consagrar o Campeão.
+   │
+   ▼
+[6. Encerramento]
+   │
+   ▼
+Clique em "Exportar chave" para copiar e postar o resultado oficial do evento.`}</pre>
+                                    </div>
                                 </div>
                                 
                                 <button 
                                     onClick={() => setIsHelpOpen(false)} 
-                                    className="w-full mt-10 py-3.5 bg-white/10 hover:bg-white/20 text-zinc-100 text-sm font-semibold rounded-2xl cursor-pointer transition-colors backdrop-blur-md"
+                                    className="w-full mt-6 py-3.5 bg-white/10 hover:bg-white/20 text-zinc-100 text-sm font-semibold rounded-2xl cursor-pointer transition-colors backdrop-blur-md"
                                 >
                                     Entendi
                                 </button>
