@@ -398,7 +398,9 @@
                 if (processedNames.length > 0) {
                     const existingNames = new Set([
                         ...availableMCs.map(m => m.name.toLowerCase()),
-                        ...Object.values(trios).flat().map(m => m.name.toLowerCase())
+                        ...Object.values(trios).flat().map(m => m.name.toLowerCase()),
+                        ...bracketParticipants.filter(Boolean).flat().map(m => m.name.toLowerCase()),
+                        ...Object.values(bracketAdvancements).filter(Boolean).flat().map(m => m.name.toLowerCase())
                     ]);
                     
                     const uniqueNewMcs = [];
@@ -421,13 +423,13 @@
                         setAvailableMCs([...availableMCs, ...uniqueNewMcs]);
                         setNewMcName('');
                         if (duplicateFound) {
-                            setWarning('Alguns nomes duplicados foram ignorados!');
+                            setWarning('Alguns nomes duplicados (na lista, grupos ou Folhinha) foram ignorados!');
                             setTimeout(() => setWarning(''), 3000);
                         } else {
                             setWarning('');
                         }
                     } else if (duplicateFound) {
-                        setWarning('Este MC já está na lista ou em um grupo!');
+                        setWarning('Este MC já está na lista, em um grupo ou na Folhinha!');
                         setTimeout(() => setWarning(''), 3000);
                     }
                 }
@@ -793,7 +795,10 @@
                     return;
                 }
 
-                const alreadyInBracket = bracketParticipants.some(group => group && group[0]?.id === chosenMcs[0]?.id);
+                const chosenNames = new Set(chosenMcs.map(m => m.name.toLowerCase()));
+                const alreadyInBracket = bracketParticipants.some(group => 
+                    group && group.some(mc => mc.id === chosenMcs[0]?.id || chosenNames.has(mc.name.toLowerCase()))
+                );
                 if (alreadyInBracket) {
                     setWarning(`Este ${getGroupName()} já está na Folhinha!`);
                     setTimeout(() => setWarning(''), 3000);
@@ -815,7 +820,16 @@
                     return;
                 }
 
-                const randomSlotIndex = emptySlots[Math.floor(Math.random() * emptySlots.length)];
+                // Evita colocar 2 MCs enviados direto na mesma batalha (um contra o outro), a não ser que não existam outras vagas disponíveis
+                const nonDirectMatchupSlots = emptySlots.filter(slotIdx => {
+                    const opponentSlotIdx = slotIdx % 2 === 0 ? slotIdx + 1 : slotIdx - 1;
+                    const opponentGroup = bracketParticipants[opponentSlotIdx];
+                    if (!opponentGroup || !opponentGroup[0]?.id) return true;
+                    return !directFolhinhaIds.includes(opponentGroup[0].id);
+                });
+
+                const candidateSlots = nonDirectMatchupSlots.length > 0 ? nonDirectMatchupSlots : emptySlots;
+                const randomSlotIndex = candidateSlots[Math.floor(Math.random() * candidateSlots.length)];
 
                 if (chosenMcs[0]?.id) {
                     setDirectFolhinhaIds(prev => [...prev, chosenMcs[0].id]);
@@ -999,7 +1013,7 @@
                     }
 
                     if (availableToDraw.length === 0) {
-                        if (validGroups.length === 0) {
+                        if (validGroups.length === 0 && bracketParticipants.filter(Boolean).length === 0) {
                             setWarning("Nenhum participante adicionado nas chaves!");
                             setTimeout(() => setWarning(''), 4000);
                         } else {
@@ -1195,7 +1209,22 @@
                         }
                     }
 
-                    setDrawnGroups(prev => [...prev, chosenIndex]);
+                    // Remove imediatamente do box ao ser sorteado, a menos que a opção "Repetição no Sorteio" esteja ativa
+                    if (!allowRepetition) {
+                        setDrawnGroups(prev => prev
+                            .filter(id => Number(id) !== Number(chosenIndex))
+                            .map(id => Number(id) > Number(chosenIndex) ? (Number(id) - 1).toString() : id)
+                        );
+                        setTrios(prev => {
+                            const updated = { ...prev };
+                            delete updated[chosenIndex];
+                            const compacted = compactTriosMap(updated);
+                            return Object.keys(compacted).length > 0 ? compacted : { 0: [] };
+                        });
+                    } else {
+                        setDrawnGroups(prev => [...prev, chosenIndex]);
+                    }
+
                     setDrawnResultModal({ isOpen: true, result: chosenMcs, groupIndex: chosenIndex, matchupOpponent: matchedDirectOpponent });
                     
                     // Joga pro modo folhinha automaticamente
@@ -1216,8 +1245,8 @@
                                 newParticipants.push(chosenMcs);
                             }
                             
-                            // Quando atinge o limite do tamanho da chave, remove os que foram sorteados e deixa apenas os que não foram sorteados nas boxes do modo chaveamento
-                            if (newParticipants.filter(Boolean).length === bracketSize) {
+                            // Quando atinge o limite do tamanho da chave (e repetição não está ativa), garante que apenas os não sorteados fiquem nas boxes
+                            if (newParticipants.filter(Boolean).length === bracketSize && !allowRepetition) {
                                 const drawnMcIds = new Set(newParticipants.filter(Boolean).flat().map(mc => mc.id));
                                 
                                 setTimeout(() => {
@@ -1236,7 +1265,7 @@
                                         });
                                         setLastEliminatedMcs(eliminated);
                                         setDrawnGroups([]);
-                                        return newTrios;
+                                        return Object.keys(newTrios).length > 0 ? newTrios : { 0: [] };
                                     });
                                 }, 0);
                             }
@@ -1967,16 +1996,16 @@
                                     <button 
                                         onClick={() => {
                                             setDrawnGroups([]);
-                                            setBracketParticipants([]);
-                                            setBracketAdvancements({});
-                                            setBracketScores({});
-                                            setDirectFolhinhaIds([]);
-                                            setWarning('🔄 Memória do sorteio e chave da Folhinha zeradas com sucesso!');
-                                            setTimeout(() => setWarning(''), 3000);
+                                            if (bracketParticipants.filter(Boolean).length > 0) {
+                                                setWarning('🔄 Memória do sorteio zerada! Os nomes ainda estão na Folhinha, caso queira ir lá limpar para realizar os sorteios.');
+                                            } else {
+                                                setWarning('🔄 Memória do sorteio zerada com sucesso!');
+                                            }
+                                            setTimeout(() => setWarning(''), 4500);
                                         }}
-                                        disabled={drawnGroups.length === 0 && bracketParticipants.length === 0}
-                                        className={`apple-btn w-10 h-10 flex items-center justify-center rounded-full transition-all ${(drawnGroups.length > 0 || bracketParticipants.length > 0) ? 'cursor-pointer hover:scale-105' : 'opacity-40 cursor-not-allowed'}`}
-                                        title="Zerar a memória do sorteio e limpar a chave da Folhinha"
+                                        disabled={drawnGroups.length === 0 && bracketParticipants.filter(Boolean).length === 0}
+                                        className={`apple-btn w-10 h-10 flex items-center justify-center rounded-full transition-all ${(drawnGroups.length > 0 || bracketParticipants.filter(Boolean).length > 0) ? 'cursor-pointer hover:scale-105' : 'opacity-40 cursor-not-allowed'}`}
+                                        title="Zerar a memória do sorteio"
                                     >
                                         <Icon name="rotate-ccw" size={16} />
                                     </button>
@@ -2473,14 +2502,14 @@
                                     </div>
                                 )}
 
-                                {(bracketParticipants.filter(Boolean).length === bracketSize || (Object.values(trios).filter(g => g.length > 0).length > 0 && drawnGroups.length >= Object.values(trios).filter(g => g.length > 0).length)) && (
+                                {(bracketParticipants.filter(Boolean).length === bracketSize || (!allowRepetition && Object.values(trios).filter(g => g.length > 0).length === 0 && bracketParticipants.filter(Boolean).length > 0) || (Object.values(trios).filter(g => g.length > 0).length > 0 && drawnGroups.length >= Object.values(trios).filter(g => g.length > 0).length)) && (
                                     <div className="mb-4 p-3 rounded-2xl bg-green-500/20 border border-green-500/40 text-green-300 text-xs font-bold tracking-wide">
                                         Todos os {getPluralGroupName()} já foram sorteados!
                                     </div>
                                 )}
                                 
                                 <div className="flex flex-col gap-2.5">
-                                    {(bracketParticipants.filter(Boolean).length === bracketSize || (Object.values(trios).filter(g => g.length > 0).length > 0 && drawnGroups.length >= Object.values(trios).filter(g => g.length > 0).length)) && (
+                                    {(bracketParticipants.filter(Boolean).length === bracketSize || (!allowRepetition && Object.values(trios).filter(g => g.length > 0).length === 0 && bracketParticipants.filter(Boolean).length > 0) || (Object.values(trios).filter(g => g.length > 0).length > 0 && drawnGroups.length >= Object.values(trios).filter(g => g.length > 0).length)) && (
                                         <button 
                                             onClick={handleCopyDrawnAndNotDrawn}
                                             className="w-full py-3 bg-white/10 hover:bg-white/20 border border-white/20 text-zinc-100 text-xs md:text-sm font-semibold uppercase tracking-wider rounded-2xl cursor-pointer transition-all flex items-center justify-center gap-2"
@@ -2520,11 +2549,11 @@
                                         <button onClick={() => setConfirmRestartDraw(false)} className="flex-1 py-3.5 bg-white/10 hover:bg-white/20 text-zinc-100 text-sm font-semibold rounded-2xl cursor-pointer transition-colors backdrop-blur-md">Cancelar</button>
                                         <button onClick={() => {
                                             setDrawnGroups([]);
-                                            setBracketParticipants([]);
-                                            setBracketAdvancements({});
-                                            setBracketScores({});
-                                            setDirectFolhinhaIds([]);
                                             setConfirmRestartDraw(false);
+                                            if (bracketParticipants.filter(Boolean).length > 0) {
+                                                setWarning('🔄 Memória do sorteio zerada! Os nomes ainda estão na Folhinha, caso queira ir lá limpar para realizar os sorteios.');
+                                                setTimeout(() => setWarning(''), 4500);
+                                            }
                                         }} className="modal-red-btn flex-1 py-3.5 bg-red-600 hover:bg-red-500 text-white text-sm font-semibold rounded-2xl cursor-pointer shadow-md shadow-red-600/20 transition-all">Reiniciar</button>
                                     </div>
                                 </div>
