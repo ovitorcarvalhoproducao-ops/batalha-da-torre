@@ -328,6 +328,7 @@
             const [confirmAvailableMcRemoval, setConfirmAvailableMcRemoval] = useState({ isOpen: false, mc: null });
             const [confirmSendToFolhinha, setConfirmSendToFolhinha] = useState({ isOpen: false, trioId: null });
             const [confirmRemoveFromFolhinha, setConfirmRemoveFromFolhinha] = useState({ isOpen: false, roundIndex: null, slotIndex: null, participant: null });
+            const [mcPhotoModal, setMcPhotoModal] = useState({ isOpen: false, mc: null, avatar: null, aspect: 1, zoom: 1, posX: 0, posY: 0, isDragging: false, dragStartX: 0, dragStartY: 0 });
 
             const [isShuffling, setIsShuffling] = useState(false);
             const [countdown, setCountdown] = useState((initialMode === 'chaveamento' || initialMode === 'folhinha') ? 3 : 5);
@@ -412,7 +413,8 @@
                             existingNames.add(lower);
                             uniqueNewMcs.push({
                                 id: Date.now().toString() + Math.random(),
-                                name: name
+                                name: name,
+                                avatarBg: AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)]
                             });
                         } else {
                             duplicateFound = true;
@@ -433,6 +435,81 @@
                         setTimeout(() => setWarning(''), 3000);
                     }
                 }
+            };
+
+            const AVATAR_COLORS = [
+                '#2563eb', '#7c3aed', '#db2777', '#ea580c',
+                '#16a34a', '#0891b2', '#4f46e5', '#9333ea',
+                '#0d9488', '#d97706', '#0284c7', '#65a30d'
+            ];
+
+            const getMcInitials = (name) => {
+                if (!name) return 'MC';
+                const parts = name.trim().split(/\s+/).filter(Boolean);
+                if (parts.length >= 2) {
+                    return (parts[0][0] + parts[1][0]).toUpperCase();
+                }
+                return name.trim().substring(0, 2).toUpperCase();
+            };
+
+            const getMcAvatarBg = (mc) => {
+                if (mc?.avatarBg) return mc.avatarBg;
+                const str = (mc?.id || mc?.name || 'mc').toString();
+                let hash = 0;
+                for (let i = 0; i < str.length; i++) {
+                    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+                }
+                return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+            };
+
+            const handleMcPhotoUpload = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        const dataUrl = reader.result;
+                        const img = new Image();
+                        img.onload = () => {
+                            const aspect = (img.naturalWidth && img.naturalHeight) ? (img.naturalWidth / img.naturalHeight) : 1;
+                            setMcPhotoModal(prev => ({
+                                ...prev,
+                                avatar: dataUrl,
+                                aspect: aspect,
+                                zoom: 1,
+                                posX: 0,
+                                posY: 0
+                            }));
+                        };
+                        img.src = dataUrl;
+                    };
+                    reader.readAsDataURL(file);
+                }
+            };
+
+            const handleSaveMcPhoto = (e) => {
+                e.preventDefault();
+                if (!mcPhotoModal.mc) return;
+                const targetId = mcPhotoModal.mc.id;
+                const updatedFields = {
+                    avatar: mcPhotoModal.avatar || null,
+                    avatarAspect: mcPhotoModal.aspect ?? 1,
+                    avatarZoom: mcPhotoModal.zoom ?? 1,
+                    avatarPosX: mcPhotoModal.posX ?? 0,
+                    avatarPosY: mcPhotoModal.posY ?? 0
+                };
+
+                setAvailableMCs(prev => prev.map(m => m.id === targetId ? { ...m, ...updatedFields } : m));
+                setTrios(prev => {
+                    const updated = { ...prev };
+                    Object.keys(updated).forEach(k => {
+                        updated[k] = updated[k].map(m => m.id === targetId ? { ...m, ...updatedFields } : m);
+                    });
+                    return updated;
+                });
+
+                setMcPhotoModal({ isOpen: false, mc: null, avatar: null, aspect: 1, zoom: 1, posX: 0, posY: 0, isDragging: false, dragStartX: 0, dragStartY: 0 });
+                setWarning('📸 Foto do MC atualizada com sucesso!');
+                setTimeout(() => setWarning(''), 3000);
             };
 
             const handleCopyMCs = async () => {
@@ -2168,17 +2245,60 @@
                                                         onDragStart={(e) => handleDragStart(e, mc, 'available')}
                                                         onClick={() => appMode === 'chaveamento' ? handleAutoAssign(mc) : null}
                                                         style={{ viewTransitionName: `mc-${mc.id.toString().replace(/[^a-zA-Z0-9]/g, '')}` }}
-                                                        className="group flex items-center gap-1.5 px-3.5 py-1.5 bg-black/20 border border-white/10 rounded-full cursor-pointer hover:border-red-500/50 hover:bg-black/30 hover:shadow-md transition-all backdrop-blur-sm"
+                                                        className="group flex items-center gap-2.5 px-3 py-1.5 bg-black/20 border border-white/10 rounded-full cursor-pointer hover:border-red-500/50 hover:bg-black/30 hover:shadow-md transition-all backdrop-blur-sm"
                                                         title={appMode === 'chaveamento' ? "Clique para enviar para a chave" : "Arraste para formar o grupo"}
                                                     >
-                                                        <Icon name="mic-2" size={12} className="text-zinc-300 group-hover:text-red-400 transition-colors" />
+                                                        <div 
+                                                            className="w-10 h-10 rounded-full overflow-hidden border border-white/20 shrink-0 flex items-center justify-center relative text-xs font-bold text-white select-none shadow-sm"
+                                                            style={!mc.avatar ? { backgroundColor: getMcAvatarBg(mc) } : {}}
+                                                        >
+                                                            {mc.avatar ? (
+                                                                <img 
+                                                                    src={mc.avatar} 
+                                                                    alt={mc.name} 
+                                                                    className="pointer-events-none select-none max-w-none"
+                                                                    style={{
+                                                                        width: (mc.avatarAspect ?? 1) >= 1 ? `${(mc.avatarAspect ?? 1) * 100}%` : '100%',
+                                                                        height: (mc.avatarAspect ?? 1) < 1 ? `${(1 / (mc.avatarAspect ?? 1)) * 100}%` : '100%',
+                                                                        transform: `translate(${mc.avatarPosX || 0}%, ${mc.avatarPosY || 0}%) scale(${mc.avatarZoom || 1})`,
+                                                                        transformOrigin: 'center center',
+                                                                        flexShrink: 0
+                                                                    }}
+                                                                />
+                                                            ) : (
+                                                                <span>{getMcInitials(mc.name)}</span>
+                                                            )}
+                                                        </div>
                                                         <span className="font-semibold text-[15px] text-zinc-100 whitespace-nowrap tracking-tight">{mc.name}</span>
+                                                        {(appMode === 'draft' || appMode === 'chaveamento') && (
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setMcPhotoModal({
+                                                                        isOpen: true,
+                                                                        mc,
+                                                                        avatar: mc.avatar || null,
+                                                                        aspect: mc.avatarAspect ?? 1,
+                                                                        zoom: mc.avatarZoom ?? 1,
+                                                                        posX: mc.avatarPosX ?? 0,
+                                                                        posY: mc.avatarPosY ?? 0,
+                                                                        isDragging: false,
+                                                                        dragStartX: 0,
+                                                                        dragStartY: 0
+                                                                    });
+                                                                }}
+                                                                className="ml-1 p-1.5 rounded-full bg-white/10 hover:bg-white/25 hover:text-white text-zinc-300 transition-all cursor-pointer flex items-center justify-center"
+                                                                title="Adicionar ou ajustar foto do MC"
+                                                            >
+                                                                <Icon name="camera" size={13} />
+                                                            </button>
+                                                        )}
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
                                                                 setConfirmAvailableMcRemoval({ isOpen: true, mc });
                                                             }}
-                                                            className="ml-1.5 p-1 rounded-full bg-white/10 hover:bg-red-500 hover:text-white text-zinc-300 transition-all cursor-pointer flex items-center justify-center"
+                                                            className="ml-0.5 p-1.5 rounded-full bg-white/10 hover:bg-red-500 hover:text-white text-zinc-300 transition-all cursor-pointer flex items-center justify-center"
                                                             title="Excluir MC da lista"
                                                         >
                                                             <Icon name="x" size={12} />
@@ -2255,22 +2375,41 @@
                                                                     onClick={() => requestRemoval(mc, numIndex, index)}
                                                                     style={{ viewTransitionName: `mc-${mc.id.toString().replace(/[^a-zA-Z0-9]/g, '')}` }}
                                                                     title="Clique para remover"
-                                                                    className={`group relative overflow-hidden flex items-center p-2.5 h-[50px] rounded-full cursor-pointer transition-all shadow-sm ${
+                                                                    className={`group relative overflow-hidden flex items-center p-2 h-[56px] rounded-full cursor-pointer transition-all shadow-sm ${
                                                                         isCaptain 
                                                                             ? 'bg-gradient-to-r from-yellow-400/30 to-transparent border-2 border-yellow-400/50 hover:border-red-500/50 hover:bg-red-500/10' 
                                                                             : 'bg-black/10 border-2 border-white/10 hover:border-red-500/50 hover:bg-red-500/10'
                                                                     }`}
                                                                 >
                                                                     <div className="flex-1 flex items-center gap-2.5 relative z-10 w-full overflow-hidden">
-                                                                        <div className={`w-7 h-7 shrink-0 rounded-full flex items-center justify-center border ${
-                                                                            isCaptain ? 'bg-yellow-400/20 border-yellow-400/40 text-yellow-300' : 'bg-black/20 border-white/20 text-zinc-300'
-                                                                        }`}>
-                                                                            <Icon name={isCaptain ? "crown" : "mic-2"} size={12} />
+                                                                        <div 
+                                                                            className={`w-10 h-10 shrink-0 rounded-full flex items-center justify-center relative border overflow-hidden text-xs font-bold text-white select-none shadow-sm ${
+                                                                                isCaptain ? 'border-yellow-400/60' : 'border-white/20'
+                                                                            }`}
+                                                                            style={!mc.avatar ? { backgroundColor: getMcAvatarBg(mc) } : {}}
+                                                                        >
+                                                                            {mc.avatar ? (
+                                                                                <img 
+                                                                                    src={mc.avatar} 
+                                                                                    alt={mc.name} 
+                                                                                    className="pointer-events-none select-none max-w-none"
+                                                                                    style={{
+                                                                                        width: (mc.avatarAspect ?? 1) >= 1 ? `${(mc.avatarAspect ?? 1) * 100}%` : '100%',
+                                                                                        height: (mc.avatarAspect ?? 1) < 1 ? `${(1 / (mc.avatarAspect ?? 1)) * 100}%` : '100%',
+                                                                                        transform: `translate(${mc.avatarPosX || 0}%, ${mc.avatarPosY || 0}%) scale(${mc.avatarZoom || 1})`,
+                                                                                        transformOrigin: 'center center',
+                                                                                        flexShrink: 0
+                                                                                    }}
+                                                                                />
+                                                                            ) : (
+                                                                                <span>{getMcInitials(mc.name)}</span>
+                                                                            )}
                                                                         </div>
-                                                                        <span className={`text-[15px] font-semibold truncate tracking-tight ${
+                                                                        <span className={`text-[15px] font-semibold truncate tracking-tight flex items-center gap-1.5 ${
                                                                             isCaptain ? 'text-yellow-300' : 'text-zinc-100'
                                                                         }`}>
-                                                                            {mc.name}
+                                                                            {isCaptain && <Icon name="crown" size={12} className="text-yellow-300 shrink-0" />}
+                                                                            <span className="truncate">{mc.name}</span>
                                                                         </span>
                                                                     </div>
                                                                     <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-red-600 rounded-full w-7 h-7 flex items-center justify-center absolute right-2 z-10 shadow-sm">
@@ -2285,7 +2424,7 @@
                                                             return (
                                                                 <div 
                                                                     key={`empty-${i}`} 
-                                                                    className={`w-full h-[50px] shrink-0 border-2 border-dashed rounded-full flex flex-col items-center justify-center transition-colors ${
+                                                                    className={`w-full h-[56px] shrink-0 border-2 border-dashed rounded-full flex flex-col items-center justify-center transition-colors ${
                                                                         isCaptainSlot && configGroupSize > 1
                                                                             ? 'border-yellow-400/60 bg-yellow-400/20' 
                                                                             : 'border-white/20 bg-black/5 empty-regular-box'
@@ -2325,7 +2464,7 @@
 
                     <footer className="mt-12 text-center text-xs text-zinc-400 relative z-10 py-6 border-t border-white/10 font-medium tracking-wide">
                         <p>Criado por Vitor Carvalho. Sugestões? Fale comigo no instagram: <a href="https://www.instagram.com/ovitorcarvalho/" target="_blank" rel="noopener noreferrer" className="text-red-500 hover:text-red-400 hover:underline transition-colors">@ovitorcarvalho</a></p>
-                        <p className="mt-2 text-[10px] opacity-65">Versão 3.3 - Última atualização Out/2026</p>
+                        <p className="mt-2 text-[10px] opacity-65">Versão 3.5 - Última atualização Nov/2026</p>
                     </footer>
                     
                     {confirmDialog.isOpen && (
@@ -2378,6 +2517,163 @@
                                         setConfirmAvailableMcRemoval({ isOpen: false, mc: null });
                                     }} className="modal-red-btn flex-1 py-3.5 bg-red-600 hover:bg-red-500 text-white text-sm font-semibold rounded-2xl cursor-pointer shadow-md shadow-red-600/20 transition-all">Remover</button>
                                 </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {mcPhotoModal.isOpen && (
+                        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/50 backdrop-blur-2xl">
+                            <div className="animate-modal-pop apple-glass p-6 md:p-8 rounded-[2rem] max-w-sm w-full relative text-center">
+                                <button 
+                                    onClick={() => setMcPhotoModal({ isOpen: false, mc: null, avatar: null, aspect: 1, zoom: 1, posX: 0, posY: 0, isDragging: false, dragStartX: 0, dragStartY: 0 })}
+                                    className="absolute top-4 right-4 flex items-center justify-center w-8 h-8 text-zinc-400 hover:text-white transition-colors cursor-pointer bg-white/10 rounded-full"
+                                >
+                                    <Icon name="x" size={16} />
+                                </button>
+
+                                <h2 className="text-lg font-bold text-white mb-1">Adicionar Foto do MC</h2>
+                                <p className="text-xs text-zinc-400 mb-5">Ajuste o zoom e a posição da foto do MC <strong className="text-white">{mcPhotoModal.mc?.name}</strong></p>
+
+                                <input type="file" id="mcPhotoUploadInput" className="hidden" accept="image/*" onChange={handleMcPhotoUpload} />
+
+                                <div className="flex flex-col items-center justify-center">
+                                    <div 
+                                        onMouseDown={(e) => {
+                                            if (!mcPhotoModal.avatar) return;
+                                            setMcPhotoModal(prev => ({ ...prev, isDragging: true, dragStartX: e.clientX - prev.posX, dragStartY: e.clientY - prev.posY }));
+                                        }}
+                                        onMouseMove={(e) => {
+                                            if (!mcPhotoModal.isDragging) return;
+                                            const nextX = Math.max(-100, Math.min(100, Math.round(e.clientX - mcPhotoModal.dragStartX)));
+                                            const nextY = Math.max(-100, Math.min(100, Math.round(e.clientY - mcPhotoModal.dragStartY)));
+                                            setMcPhotoModal(prev => ({ ...prev, posX: nextX, posY: nextY }));
+                                        }}
+                                        onMouseUp={() => setMcPhotoModal(prev => ({ ...prev, isDragging: false }))}
+                                        onMouseLeave={() => setMcPhotoModal(prev => ({ ...prev, isDragging: false }))}
+                                        onTouchStart={(e) => {
+                                            if (!mcPhotoModal.avatar) return;
+                                            const touch = e.touches[0];
+                                            setMcPhotoModal(prev => ({ ...prev, isDragging: true, dragStartX: touch.clientX - prev.posX, dragStartY: touch.clientY - prev.posY }));
+                                        }}
+                                        onTouchMove={(e) => {
+                                            if (!mcPhotoModal.isDragging) return;
+                                            const touch = e.touches[0];
+                                            const nextX = Math.max(-100, Math.min(100, Math.round(touch.clientX - mcPhotoModal.dragStartX)));
+                                            const nextY = Math.max(-100, Math.min(100, Math.round(touch.clientY - mcPhotoModal.dragStartY)));
+                                            setMcPhotoModal(prev => ({ ...prev, posX: nextX, posY: nextY }));
+                                        }}
+                                        onTouchEnd={() => setMcPhotoModal(prev => ({ ...prev, isDragging: false }))}
+                                        className={`w-28 h-28 rounded-full border-2 border-white/20 shadow-xl overflow-hidden flex items-center justify-center relative select-none ${mcPhotoModal.avatar ? 'cursor-move bg-black/40' : ''}`}
+                                        style={!mcPhotoModal.avatar ? { backgroundColor: getMcAvatarBg(mcPhotoModal.mc) } : {}}
+                                        title={mcPhotoModal.avatar ? "Arraste para mover a posição da foto" : ""}
+                                    >
+                                        {mcPhotoModal.avatar ? (
+                                            <img 
+                                                src={mcPhotoModal.avatar} 
+                                                alt="Preview" 
+                                                className="pointer-events-none select-none max-w-none"
+                                                style={{
+                                                    width: (mcPhotoModal.aspect ?? 1) >= 1 ? `${(mcPhotoModal.aspect ?? 1) * 100}%` : '100%',
+                                                    height: (mcPhotoModal.aspect ?? 1) < 1 ? `${(1 / (mcPhotoModal.aspect ?? 1)) * 100}%` : '100%',
+                                                    transform: `translate(${mcPhotoModal.posX}%, ${mcPhotoModal.posY}%) scale(${mcPhotoModal.zoom})`,
+                                                    transformOrigin: 'center center',
+                                                    flexShrink: 0
+                                                }}
+                                            />
+                                        ) : (
+                                            <span className="text-2xl font-bold text-white">{getMcInitials(mcPhotoModal.mc?.name)}</span>
+                                        )}
+                                    </div>
+
+                                    <div className="flex items-center gap-2 mt-4">
+                                        <label 
+                                            htmlFor="mcPhotoUploadInput" 
+                                            className="apple-btn px-4 py-2 rounded-full text-xs font-semibold cursor-pointer flex items-center gap-1.5 hover:scale-105 transition-transform"
+                                        >
+                                            <Icon name="camera" size={14} />
+                                            {mcPhotoModal.avatar ? 'Trocar foto' : 'Escolher foto'}
+                                        </label>
+                                        {mcPhotoModal.avatar && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setMcPhotoModal(prev => ({ ...prev, avatar: null, aspect: 1, zoom: 1, posX: 0, posY: 0 }))}
+                                                className="px-3 py-2 rounded-full bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-300 text-xs font-semibold cursor-pointer transition-colors"
+                                                title="Remover foto e usar iniciais"
+                                            >
+                                                Remover
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {mcPhotoModal.avatar && (
+                                    <div className="mt-5 space-y-3 text-left bg-black/20 p-4 rounded-2xl border border-white/10">
+                                        <div className="flex flex-col gap-1">
+                                            <div className="flex justify-between text-[11px] text-zinc-300 font-medium">
+                                                <span>Proporção (Zoom)</span>
+                                                <span>{Math.round(mcPhotoModal.zoom * 100)}%</span>
+                                            </div>
+                                            <input 
+                                                type="range" min="0.5" max="3" step="0.05"
+                                                value={mcPhotoModal.zoom}
+                                                onChange={(e) => setMcPhotoModal(prev => ({ ...prev, zoom: Number(e.target.value) }))}
+                                                className="w-full accent-red-500 cursor-pointer"
+                                            />
+                                        </div>
+
+                                        <div className="flex flex-col gap-1">
+                                            <div className="flex justify-between text-[11px] text-zinc-300 font-medium">
+                                                <span>Posição Horizontal (X)</span>
+                                                <span>{mcPhotoModal.posX}%</span>
+                                            </div>
+                                            <input 
+                                                type="range" min="-100" max="100" step="1"
+                                                value={mcPhotoModal.posX}
+                                                onChange={(e) => setMcPhotoModal(prev => ({ ...prev, posX: Number(e.target.value) }))}
+                                                className="w-full accent-red-500 cursor-pointer"
+                                            />
+                                        </div>
+
+                                        <div className="flex flex-col gap-1">
+                                            <div className="flex justify-between text-[11px] text-zinc-300 font-medium">
+                                                <span>Posição Vertical (Y)</span>
+                                                <span>{mcPhotoModal.posY}%</span>
+                                            </div>
+                                            <input 
+                                                type="range" min="-100" max="100" step="1"
+                                                value={mcPhotoModal.posY}
+                                                onChange={(e) => setMcPhotoModal(prev => ({ ...prev, posY: Number(e.target.value) }))}
+                                                className="w-full accent-red-500 cursor-pointer"
+                                            />
+                                        </div>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => setMcPhotoModal(prev => ({ ...prev, zoom: 1, posX: 0, posY: 0 }))}
+                                            className="w-full pt-1 text-[11px] text-zinc-400 hover:text-white underline text-center cursor-pointer"
+                                        >
+                                            Centralizar e resetar proporção
+                                        </button>
+                                    </div>
+                                )}
+
+                                <form onSubmit={handleSaveMcPhoto} className="mt-6">
+                                    <div className="flex gap-3 w-full">
+                                        <button 
+                                            type="button"
+                                            onClick={() => setMcPhotoModal({ isOpen: false, mc: null, avatar: null, aspect: 1, zoom: 1, posX: 0, posY: 0, isDragging: false, dragStartX: 0, dragStartY: 0 })} 
+                                            className="flex-1 py-3.5 bg-white/10 hover:bg-white/20 text-zinc-100 text-sm font-semibold rounded-2xl cursor-pointer transition-colors backdrop-blur-md"
+                                        >
+                                            Cancelar
+                                        </button>
+                                        <button 
+                                            type="submit"
+                                            className="modal-red-btn flex-1 py-3.5 bg-red-600 hover:bg-red-500 text-white text-sm font-semibold rounded-2xl cursor-pointer shadow-md shadow-red-600/20 transition-all"
+                                        >
+                                            Salvar
+                                        </button>
+                                    </div>
+                                </form>
                             </div>
                         </div>
                     )}
