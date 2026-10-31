@@ -3525,4 +3525,117 @@
 
                                         <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-200 pt-2">⚔️ Gestão de Batalhas e Avanço</h4>
                                         <ul className="list-disc pl-5 space-y-1.5">
-                                            <li><strong className="text-white
+                                            <li><strong className="text-white">Contador de Placar (0 a 5):</strong> Cada card possui um botão numérico. Clicar nele aumenta a pontuação de 0 a 5 (com retorno a 0), registrando os votos dos jurados ou rounds ganhos.</li>
+                                            <li><strong className="text-white">Avançar Vencedor:</strong> Clique sobre a caixa do MC que ganhou o duelo. Ele avançará automaticamente para a casa do confronto seguinte.</li>
+                                            <li><strong className="text-white">Desfazer / Voltar Fase:</strong> Clicar novamente no participante que acabou de avançar na fase seguinte desfaz o avanço e restaura a batalha anterior.</li>
+                                            <li><strong className="text-white">Indicação Visual de Resultado:</strong> Na etapa anterior, o participante que venceu fica com a moldura <strong className="text-green-400">verde</strong>, enquanto o que perdeu fica destacado em <strong className="text-always-red text-red-400">vermelho</strong>.</li>
+                                            <li><strong className="text-white">Eliminação Automática:</strong> Ao declarar o vencedor na Folhinha, o sistema localiza o perdedor no Modo Chaveamento e o elimina automaticamente.</li>
+                                        </ul>
+
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-200 pt-2">✏️ Modo Editor (ON / OFF)</h4>
+                                        <ul className="list-disc pl-5 space-y-1.5">
+                                            <li>Se houver algum erro de montagem ou desistência, ative o botão <strong className="text-yellow-300">"Modo Editor: ON"</strong>.</li>
+                                            <li>Clique em um MC e em seguida clique em qualquer outra vaga da chave (ou simplesmente arraste e solte com o mouse).</li>
+                                            <li>Se a vaga de destino estiver vazia, ele será movido; se já estiver ocupada, os dois MCs <strong className="text-white">trocarão de lugar</strong>.</li>
+                                        </ul>
+
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-200 pt-2">🎲 Sortear Confronto dentro da Folhinha</h4>
+                                        <p>Clicar em "Sortear Confronto" dentro da Folhinha identifica a fase atual do torneio e embaralha aleatoriamente as posições dos confrontos em 5 trocas dinâmicas, sem atraso de contagem regressiva.</p>
+
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-200 pt-2">📤 Exportar Chave e Limpeza</h4>
+                                        <ul className="list-disc pl-5 space-y-1.5">
+                                            <li><strong className="text-white">Exportar chave:</strong> Copia o status completo de todas as fases, confrontos e placares formatados para texto, pronto para divulgação no Instagram ou grupos de WhatsApp.</li>
+                                            <li><strong className="text-white">Limpar:</strong> Zera a chave do torneio e devolve todos os MCs cadastrados de volta para as caixas do Modo Chaveamento.</li>
+                                        </ul>
+                                    </div>
+
+                                    <hr className="border-white/10" />
+
+                                    <div className="space-y-3">
+                                        <h3 className="text-base font-bold text-white">5. Modo Draft (Seleção de Capitães e Equipes)</h3>
+                                        <p>Modo dedicado para quando a batalha for disputada em trios, duplas ou quintetos e os capitães forem escolher seus companheiros.</p>
+                                        <ol className="list-decimal pl-5 space-y-1.5">
+                                            <li><strong className="text-yellow-400">Definição de Capitães:</strong> Arraste o MC para o primeiro espaço (identificado com borda dourada e coroa) para marcá-lo como Capitão.</li>
+                                            <li><strong className="text-white">Sortear a Ordem de Escolha:</strong> Clique no botão "Sortear Ordem". O sistema fará os trios/grupos trocarem de lugar 5 vezes na tela, definindo aleatoriamente a ordem em que os capitães escolhem seus parceiros.</li>
+                                            <li><strong className="text-green-400">Formação dos Grupos:</strong> Conforme os capitães escolhem, arraste os MCs restantes para dentro de cada caixa.</li>
+                                            <li><strong className="text-white">Ir pro Chaveamento:</strong> Assim que os grupos estiverem prontos, clique no botão central "Ir pro Chaveamento". Caso algum grupo esteja incompleto, o popup avisará antes da confirmação. Ao transferir, toda a estrutura formada é enviada para o Modo Chaveamento e o sistema reconhece e ajusta automaticamente o tamanho da chave (ex: 8 trios ajustam a chave para 8 vagas).</li>
+                                        </ol>
+                                    </div>
+
+                                    <hr className="border-white/10" />
+
+                                    <div className="space-y-3">
+                                        <h3 className="text-base font-bold text-white">6. Painel de Configurações (Ícone de Engrenagem)</h3>
+                                        <p>Acessível no topo do site, permite calibrar o evento:</p>
+                                        <ul className="list-disc pl-5 space-y-1.5">
+                                            <li><strong className="text-white">Tempo de Contagem:</strong> Define a duração da contagem regressiva nos sorteios (de 1s a 15s).</li>
+                                            <li><strong className="text-white">Quantidade de Mudanças (Draft):</strong> Define quantas vezes os cards trocam de lugar na animação de sorteio (de 1x a 10x).</li>
+                                            <li><strong className="text-white">Formato da Batalha:</strong> Alterna entre Solo (1), Dupla (2), Trio (3), Quarteto (4) ou Quinteto (5).</li>
+                                            <li><strong className="text-white">Tamanho da Chave:</strong> Ajusta a quantidade total de vagas do torneio entre 4, 8, 16 ou 32 vagas (configuração unificada entre Chaveamento e Folhinha).</li>
+                                            <li><strong className="text-white">Repetição no Sorteio:</strong> Chave para permitir ou proibir que um mesmo participante seja sorteado mais de uma vez.</li>
+                                        </ul>
+                                    </div>
+
+                                    <hr className="border-white/10" />
+
+                                    <div className="space-y-3">
+                                        <h3 className="text-base font-bold text-white">7. Fluxo Recomendado para um Evento Oficial</h3>
+                                        <pre className="bg-black/30 border border-white/10 rounded-2xl p-4 text-xs text-zinc-200 overflow-x-auto leading-snug font-mono">{`[1. Inscrições]
+   │
+   ▼
+Adicione todos os nomes colando a lista no menu "Lista de MC's".
+   │
+   ▼
+[2. Configuração do Evento]
+   │
+   ▼
+Abra a engrenagem e selecione o "Formato da Batalha" (Solo, Dupla, etc.) 
+e o "Tamanho da Chave" (ex: 16 vagas).
+   │
+   ▼
+[3. Formação das Caixas (Se Duplas/Trios)]
+   │
+   ├─► Opção A: Clique em "Sortear Duplas" para formar os times aleatoriamente.
+   └─► Opção B: Arraste os MC's para as vagas disponíveis.
+   │
+   ▼
+[4. Sorteio dos Confrontos]
+   │
+   ▼
+No Modo Chaveamento, clique em "Sortear Confronto" sucessivamente.
+Os nomes vão sendo alocados direto na chave da Folhinha.
+   │
+   ▼
+[5. Realização das Batalhas (Modo Folhinha)]
+   │
+   ▼
+Mude para o "Modo Folhinha":
+  • Anote os placares (0 a 5) ao lado de cada MC.
+  • Clique no vencedor de cada duelo para avançá-lo de fase.
+  • Repita até a grande final para consagrar o Campeão.
+   │
+   ▼
+[6. Encerramento]
+   │
+   ▼
+Clique em "Exportar chave" para copiar e postar o resultado oficial do evento.`}</pre>
+                                    </div>
+                                </div>
+                                
+                                <button 
+                                    onClick={() => setIsHelpOpen(false)} 
+                                    className="w-full mt-6 py-3.5 bg-white/10 hover:bg-white/20 text-zinc-100 text-sm font-semibold rounded-2xl cursor-pointer transition-colors backdrop-blur-md"
+                                >
+                                    Entendi
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
