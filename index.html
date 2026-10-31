@@ -329,6 +329,7 @@
             const [confirmSendToFolhinha, setConfirmSendToFolhinha] = useState({ isOpen: false, trioId: null });
             const [confirmRemoveFromFolhinha, setConfirmRemoveFromFolhinha] = useState({ isOpen: false, roundIndex: null, slotIndex: null, participant: null });
             const [mcPhotoModal, setMcPhotoModal] = useState({ isOpen: false, mc: null, avatar: null, aspect: 1, zoom: 1, posX: 0, posY: 0, isDragging: false, dragStartX: 0, dragStartY: 0 });
+            const [isExpandedMcListOpen, setIsExpandedMcListOpen] = useState(false);
 
             const [isShuffling, setIsShuffling] = useState(false);
             const [countdown, setCountdown] = useState((initialMode === 'chaveamento' || initialMode === 'folhinha') ? 3 : 5);
@@ -2184,6 +2185,15 @@
                                             </h2>
                                             
                                             <div className="flex items-center gap-2">
+                                                {appMode === 'draft' && (
+                                                    <button 
+                                                        onClick={() => setIsExpandedMcListOpen(true)}
+                                                        className="h-9 min-w-[44px] px-3.5 bg-white/10 hover:bg-white/20 border border-white/10 rounded-full text-zinc-300 hover:text-white transition-colors cursor-pointer flex items-center justify-center shadow-sm"
+                                                        title="Expandir Lista de MC's"
+                                                    >
+                                                        <Icon name="maximize-2" size={16} />
+                                                    </button>
+                                                )}
                                                 <button 
                                                     onClick={handleCopyMCs}
                                                     className="h-9 min-w-[44px] px-3.5 bg-white/10 hover:bg-white/20 border border-white/10 rounded-full text-zinc-300 hover:text-white transition-colors cursor-pointer flex items-center justify-center shadow-sm"
@@ -2466,6 +2476,151 @@
                         <p>Criado por Vitor Carvalho. Sugestões? Fale comigo no instagram: <a href="https://www.instagram.com/ovitorcarvalho/" target="_blank" rel="noopener noreferrer" className="text-red-500 hover:text-red-400 hover:underline transition-colors">@ovitorcarvalho</a></p>
                         <p className="mt-2 text-[10px] opacity-65">Versão 3.5 - Última atualização Nov/2026</p>
                     </footer>
+
+                    {isExpandedMcListOpen && appMode === 'draft' && (() => {
+                        const totalMcs = sortedAvailableMCs.length;
+                        let avatarSizeClass = 'w-14 h-14 text-base';
+                        let nameSizeClass = 'text-xl';
+                        let pillPadClass = 'px-5 py-3 gap-3.5';
+                        let containerGapClass = 'gap-4';
+                        let btnPadClass = 'p-2';
+                        let iconSize = 15;
+
+                        if (totalMcs > 60) {
+                            avatarSizeClass = 'w-6 h-6 text-[9px]';
+                            nameSizeClass = 'text-xs';
+                            pillPadClass = 'px-2.5 py-1 gap-1.5';
+                            containerGapClass = 'gap-1.5';
+                            btnPadClass = 'p-1';
+                            iconSize = 10;
+                        } else if (totalMcs > 40) {
+                            avatarSizeClass = 'w-8 h-8 text-[10px]';
+                            nameSizeClass = 'text-xs';
+                            pillPadClass = 'px-3 py-1.5 gap-2';
+                            containerGapClass = 'gap-2';
+                            btnPadClass = 'p-1';
+                            iconSize = 11;
+                        } else if (totalMcs > 24) {
+                            avatarSizeClass = 'w-9 h-9 text-xs';
+                            nameSizeClass = 'text-sm';
+                            pillPadClass = 'px-3.5 py-1.5 gap-2';
+                            containerGapClass = 'gap-2.5';
+                            btnPadClass = 'p-1.5';
+                            iconSize = 12;
+                        } else if (totalMcs > 12) {
+                            avatarSizeClass = 'w-11 h-11 text-sm';
+                            nameSizeClass = 'text-base';
+                            pillPadClass = 'px-4 py-2 gap-2.5';
+                            containerGapClass = 'gap-3';
+                            btnPadClass = 'p-1.5';
+                            iconSize = 13;
+                        }
+
+                        return (
+                            <div className="fixed inset-0 z-[140] flex items-center justify-center p-3 md:p-6 bg-black/60 backdrop-blur-2xl">
+                                <div className="animate-modal-pop apple-glass p-5 md:p-8 rounded-[2.5rem] w-[96vw] max-w-[1600px] h-[90vh] flex flex-col relative overflow-hidden">
+                                    <div className="flex items-center justify-between pb-4 mb-4 border-b border-white/10 shrink-0">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 bg-red-600/20 border border-red-500/40 rounded-full flex items-center justify-center text-red-500 red-mode-white shadow-inner">
+                                                <Icon name="users" size={20} />
+                                            </div>
+                                            <div>
+                                                <h2 className="text-lg md:text-2xl font-unbounded font-bold text-zinc-100 uppercase tracking-tight">Lista de MC's</h2>
+                                                <p className="text-xs text-zinc-400">{totalMcs} {totalMcs === 1 ? 'MC disponível' : "MC's disponíveis"} no Draft</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2.5">
+                                            <button 
+                                                onClick={handleCopyMCs}
+                                                className="h-10 px-4 apple-btn rounded-full text-xs font-semibold flex items-center gap-2 cursor-pointer"
+                                                title="Copiar Lista Numerada"
+                                            >
+                                                <Icon name="copy" size={15} />
+                                                <span className="hidden sm:inline">Copiar Lista</span>
+                                            </button>
+                                            <button 
+                                                onClick={() => setIsExpandedMcListOpen(false)}
+                                                className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-zinc-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                                                title="Fechar visualização expandida"
+                                            >
+                                                <Icon name="minimize-2" size={18} />
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className={`flex-1 overflow-y-auto flex flex-wrap items-center justify-center content-center ${containerGapClass} p-2`}>
+                                        {totalMcs === 0 ? (
+                                            <div className="flex flex-col items-center justify-center text-zinc-400 space-y-3 opacity-80">
+                                                <Icon name="mic-2" size={48} strokeWidth={1.5} />
+                                                <p className="text-base font-medium text-center tracking-wide">Lista Vazia</p>
+                                            </div>
+                                        ) : (
+                                            sortedAvailableMCs.map((mc) => (
+                                                <div
+                                                    key={`expanded-${mc.id}`}
+                                                    className={`group flex items-center ${pillPadClass} bg-black/30 border border-white/15 rounded-full hover:border-red-500/50 hover:bg-black/40 transition-all backdrop-blur-sm shadow-md`}
+                                                >
+                                                    <div 
+                                                        className={`${avatarSizeClass} rounded-full overflow-hidden border border-white/20 shrink-0 flex items-center justify-center relative font-bold text-white select-none shadow-sm`}
+                                                        style={!mc.avatar ? { backgroundColor: getMcAvatarBg(mc) } : {}}
+                                                    >
+                                                        {mc.avatar ? (
+                                                            <img 
+                                                                src={mc.avatar} 
+                                                                alt={mc.name} 
+                                                                className="pointer-events-none select-none max-w-none"
+                                                                style={{
+                                                                    width: (mc.avatarAspect ?? 1) >= 1 ? `${(mc.avatarAspect ?? 1) * 100}%` : '100%',
+                                                                    height: (mc.avatarAspect ?? 1) < 1 ? `${(1 / (mc.avatarAspect ?? 1)) * 100}%` : '100%',
+                                                                    transform: `translate(${mc.avatarPosX || 0}%, ${mc.avatarPosY || 0}%) scale(${mc.avatarZoom || 1})`,
+                                                                    transformOrigin: 'center center',
+                                                                    flexShrink: 0
+                                                                }}
+                                                            />
+                                                        ) : (
+                                                            <span>{getMcInitials(mc.name)}</span>
+                                                        )}
+                                                    </div>
+                                                    <span className={`font-semibold ${nameSizeClass} text-zinc-100 whitespace-nowrap tracking-tight`}>{mc.name}</span>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setMcPhotoModal({
+                                                                isOpen: true,
+                                                                mc,
+                                                                avatar: mc.avatar || null,
+                                                                aspect: mc.avatarAspect ?? 1,
+                                                                zoom: mc.avatarZoom ?? 1,
+                                                                posX: mc.avatarPosX ?? 0,
+                                                                posY: mc.avatarPosY ?? 0,
+                                                                isDragging: false,
+                                                                dragStartX: 0,
+                                                                dragStartY: 0
+                                                            });
+                                                        }}
+                                                        className={`ml-1 ${btnPadClass} rounded-full bg-white/10 hover:bg-white/25 hover:text-white text-zinc-300 transition-all cursor-pointer flex items-center justify-center`}
+                                                        title="Adicionar ou ajustar foto do MC"
+                                                    >
+                                                        <Icon name="camera" size={iconSize} />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setConfirmAvailableMcRemoval({ isOpen: true, mc });
+                                                        }}
+                                                        className={`ml-0.5 ${btnPadClass} rounded-full bg-white/10 hover:bg-red-500 hover:text-white text-zinc-300 transition-all cursor-pointer flex items-center justify-center`}
+                                                        title="Excluir MC da lista"
+                                                    >
+                                                        <Icon name="x" size={iconSize} />
+                                                    </button>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })()}
                     
                     {confirmDialog.isOpen && (
                         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-2xl">
