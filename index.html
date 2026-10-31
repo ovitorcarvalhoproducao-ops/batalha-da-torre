@@ -1357,6 +1357,78 @@
                 }
             };
 
+            const executeShuffle = async () => {
+                setIsShuffling(false);
+
+                await new Promise(resolve => setTimeout(resolve, 50));
+
+                let currentTrioValues = Object.values(trios);
+                const originalTrioValues = [...currentTrioValues];
+
+                const getDerangement = (currentArray, originalArrayToAvoid) => {
+                    if (currentArray.length <= 1) return [...currentArray];
+                    let newArray = [...currentArray];
+                    let isDerangement = false;
+                    let attempts = 0;
+                    
+                    while (!isDerangement && attempts < 200) {
+                        for (let i = newArray.length - 1; i > 0; i--) {
+                            const j = Math.floor(Math.random() * (i + 1));
+                            [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+                        }
+                        
+                        isDerangement = true;
+                        for (let i = 0; i < currentArray.length; i++) {
+                            if (newArray[i] === currentArray[i]) {
+                                isDerangement = false;
+                                break;
+                            }
+                            if (originalArrayToAvoid && newArray[i] === originalArrayToAvoid[i]) {
+                                isDerangement = false;
+                                break;
+                            }
+                        }
+                        attempts++;
+                    }
+                    return newArray;
+                };
+
+                for (let step = 1; step <= configShuffleSteps; step++) {
+                    await new Promise(resolve => {
+                        const isLastStep = step === configShuffleSteps;
+                        const nextTrioValues = getDerangement(
+                            currentTrioValues, 
+                            isLastStep ? originalTrioValues : null
+                        );
+                        currentTrioValues = nextTrioValues;
+
+                        const applyShuffle = () => {
+                            setTrios(() => {
+                                const newTrios = {};
+                                nextTrioValues.forEach((trio, index) => {
+                                    newTrios[index] = trio; 
+                                });
+                                return newTrios;
+                            });
+                        };
+
+                        if (document.startViewTransition) {
+                            const transition = document.startViewTransition(() => {
+                                ReactDOM.flushSync(() => {
+                                    applyShuffle();
+                                });
+                            });
+                            transition.finished.then(() => {
+                                setTimeout(resolve, isLastStep ? 0 : 400); 
+                            });
+                        } else {
+                            applyShuffle();
+                            setTimeout(resolve, 300);
+                        }
+                    });
+                }
+            };
+
             const executeRandomTeamFill = async () => {
                 if (configGroupSize < 2) return;
                 if (availableMCs.length === 0) {
