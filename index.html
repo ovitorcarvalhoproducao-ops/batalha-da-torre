@@ -330,6 +330,10 @@
             const [confirmRemoveFromFolhinha, setConfirmRemoveFromFolhinha] = useState({ isOpen: false, roundIndex: null, slotIndex: null, participant: null });
             const [mcPhotoModal, setMcPhotoModal] = useState({ isOpen: false, mc: null, avatar: null, aspect: 1, zoom: 1, posX: 0, posY: 0, isDragging: false, dragStartX: 0, dragStartY: 0 });
             const [isExpandedMcListOpen, setIsExpandedMcListOpen] = useState(false);
+            const [draftTimerDuration, setDraftTimerDuration] = useState(60);
+            const [draftTimerRemaining, setDraftTimerRemaining] = useState(60);
+            const [isDraftTimerRunning, setIsDraftTimerRunning] = useState(false);
+            const [isDraftTimerConfigOpen, setIsDraftTimerConfigOpen] = useState(false);
 
             const [isShuffling, setIsShuffling] = useState(false);
             const [countdown, setCountdown] = useState((initialMode === 'chaveamento' || initialMode === 'folhinha') ? 3 : 5);
@@ -369,6 +373,26 @@
                     document.body.classList.add('red-mode');
                 }
             }, [theme]);
+
+            useEffect(() => {
+                if (!isDraftTimerRunning) return;
+                const interval = setInterval(() => {
+                    setDraftTimerRemaining(prev => {
+                        if (prev <= 1) {
+                            setIsDraftTimerRunning(false);
+                            return 0;
+                        }
+                        return prev - 1;
+                    });
+                }, 1000);
+                return () => clearInterval(interval);
+            }, [isDraftTimerRunning]);
+
+            const formatDraftTimer = (secs) => {
+                const m = Math.floor(secs / 60);
+                const s = secs % 60;
+                return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+            };
 
             const sortedAvailableMCs = useMemo(() => {
                 return [...availableMCs].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
@@ -2591,7 +2615,7 @@
                         return (
                             <div className="fixed inset-0 z-[140] flex items-center justify-center p-3 md:p-6 bg-black/60 backdrop-blur-2xl">
                                 <div className="animate-modal-pop apple-glass p-5 md:p-8 rounded-[2.5rem] w-[96vw] max-w-[1600px] h-[90vh] flex flex-col relative overflow-hidden">
-                                    <div className="flex items-center justify-between pb-4 mb-4 border-b border-white/10 shrink-0">
+                                    <div className="flex flex-wrap items-center justify-between gap-4 pb-4 mb-4 border-b border-white/10 shrink-0">
                                         <div className="flex items-center gap-3">
                                             <div className="w-10 h-10 bg-red-600/20 border border-red-500/40 rounded-full flex items-center justify-center text-red-500 red-mode-white shadow-inner">
                                                 <Icon name="users" size={20} />
@@ -2601,6 +2625,91 @@
                                                 <p className="text-xs text-zinc-400">{totalMcs} {totalMcs === 1 ? 'MC disponível' : "MC's disponíveis"} no Draft</p>
                                             </div>
                                         </div>
+
+                                        {/* Cronômetro Funcional de Escolha do Draft */}
+                                        <div className="flex items-center gap-2 bg-black/30 border border-white/15 rounded-full px-3.5 py-1.5 shadow-inner relative">
+                                            <Icon name="timer" size={16} className={draftTimerRemaining === 0 ? "text-always-red text-red-500 animate-bounce" : isDraftTimerRunning ? "text-green-400 animate-pulse" : "text-zinc-400"} />
+                                            <span className={`font-unbounded font-bold text-base md:text-xl tracking-wider min-w-[68px] text-center select-none ${draftTimerRemaining === 0 ? 'text-always-red text-red-500 animate-pulse' : draftTimerRemaining <= 10 && isDraftTimerRunning ? 'text-yellow-400 animate-pulse' : 'text-white'}`}>
+                                                {formatDraftTimer(draftTimerRemaining)}
+                                            </span>
+
+                                            <button
+                                                onClick={() => {
+                                                    if (draftTimerRemaining === 0) {
+                                                        setDraftTimerRemaining(draftTimerDuration);
+                                                        setIsDraftTimerRunning(true);
+                                                    } else {
+                                                        setIsDraftTimerRunning(!isDraftTimerRunning);
+                                                    }
+                                                }}
+                                                className={`w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer ${isDraftTimerRunning ? 'bg-yellow-500/20 border border-yellow-400/50 text-yellow-300 hover:bg-yellow-500/30' : 'bg-green-500/20 border border-green-400/50 text-green-400 hover:bg-green-500/30'}`}
+                                                title={isDraftTimerRunning ? "Pausar cronômetro" : "Iniciar cronômetro"}
+                                            >
+                                                <Icon name={isDraftTimerRunning ? "pause" : "play"} size={14} />
+                                            </button>
+
+                                            <button
+                                                onClick={() => {
+                                                    setIsDraftTimerRunning(false);
+                                                    setDraftTimerRemaining(draftTimerDuration);
+                                                }}
+                                                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 text-zinc-300 hover:text-white flex items-center justify-center transition-all cursor-pointer"
+                                                title="Resetar cronômetro"
+                                            >
+                                                <Icon name="rotate-ccw" size={14} />
+                                            </button>
+
+                                            <button
+                                                onClick={() => setIsDraftTimerConfigOpen(!isDraftTimerConfigOpen)}
+                                                className={`h-8 px-2.5 rounded-full border text-[11px] font-semibold flex items-center gap-1 transition-all cursor-pointer ${isDraftTimerConfigOpen ? 'bg-red-600 text-white border-red-500' : 'bg-white/10 hover:bg-white/20 border-white/10 text-zinc-300 hover:text-white'}`}
+                                                title="Escolher tempo do cronômetro"
+                                            >
+                                                <Icon name="clock" size={12} />
+                                                <span className="hidden sm:inline">Tempo</span>
+                                            </button>
+
+                                            {isDraftTimerConfigOpen && (
+                                                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 apple-glass p-3 rounded-2xl border border-white/20 shadow-2xl z-50 flex flex-col gap-2.5 min-w-[230px] animate-modal-pop">
+                                                    <div className="flex items-center justify-between text-[11px] font-semibold text-zinc-300 px-1">
+                                                        <span>Escolher Tempo</span>
+                                                        <span className="text-white font-bold">{formatDraftTimer(draftTimerDuration)}</span>
+                                                    </div>
+                                                    <div className="grid grid-cols-4 gap-1.5">
+                                                        {[30, 45, 60, 90, 120, 180].map(sec => (
+                                                            <button
+                                                                key={sec}
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setIsDraftTimerRunning(false);
+                                                                    setDraftTimerDuration(sec);
+                                                                    setDraftTimerRemaining(sec);
+                                                                }}
+                                                                className={`py-1.5 px-2 rounded-xl text-[11px] font-bold transition-all cursor-pointer border ${draftTimerDuration === sec ? 'bg-red-600 text-white border-red-500 shadow-sm settings-concluir-btn' : 'bg-white/10 hover:bg-white/20 text-zinc-200 border-white/10'}`}
+                                                            >
+                                                                {sec < 60 ? `${sec}s` : sec % 60 === 0 ? `${sec / 60}m` : `${Math.floor(sec / 60)}m${sec % 60}s`}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                    <div className="flex items-center gap-2 pt-1 border-t border-white/10">
+                                                        <input
+                                                            type="range"
+                                                            min="10"
+                                                            max="300"
+                                                            step="5"
+                                                            value={draftTimerDuration}
+                                                            onChange={(e) => {
+                                                                const val = Number(e.target.value);
+                                                                setIsDraftTimerRunning(false);
+                                                                setDraftTimerDuration(val);
+                                                                setDraftTimerRemaining(val);
+                                                            }}
+                                                            className="w-full accent-red-500 cursor-pointer"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+
                                         <div className="flex items-center gap-2.5">
                                             <button 
                                                 onClick={handleCopyMCs}
@@ -3416,117 +3525,4 @@
 
                                         <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-200 pt-2">⚔️ Gestão de Batalhas e Avanço</h4>
                                         <ul className="list-disc pl-5 space-y-1.5">
-                                            <li><strong className="text-white">Contador de Placar (0 a 5):</strong> Cada card possui um botão numérico. Clicar nele aumenta a pontuação de 0 a 5 (com retorno a 0), registrando os votos dos jurados ou rounds ganhos.</li>
-                                            <li><strong className="text-white">Avançar Vencedor:</strong> Clique sobre a caixa do MC que ganhou o duelo. Ele avançará automaticamente para a casa do confronto seguinte.</li>
-                                            <li><strong className="text-white">Desfazer / Voltar Fase:</strong> Clicar novamente no participante que acabou de avançar na fase seguinte desfaz o avanço e restaura a batalha anterior.</li>
-                                            <li><strong className="text-white">Indicação Visual de Resultado:</strong> Na etapa anterior, o participante que venceu fica com a moldura <strong className="text-green-400">verde</strong>, enquanto o que perdeu fica destacado em <strong className="text-always-red text-red-400">vermelho</strong>.</li>
-                                            <li><strong className="text-white">Eliminação Automática:</strong> Ao declarar o vencedor na Folhinha, o sistema localiza o perdedor no Modo Chaveamento e o elimina automaticamente.</li>
-                                        </ul>
-
-                                        <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-200 pt-2">✏️ Modo Editor (ON / OFF)</h4>
-                                        <ul className="list-disc pl-5 space-y-1.5">
-                                            <li>Se houver algum erro de montagem ou desistência, ative o botão <strong className="text-yellow-300">"Modo Editor: ON"</strong>.</li>
-                                            <li>Clique em um MC e em seguida clique em qualquer outra vaga da chave (ou simplesmente arraste e solte com o mouse).</li>
-                                            <li>Se a vaga de destino estiver vazia, ele será movido; se já estiver ocupada, os dois MCs <strong className="text-white">trocarão de lugar</strong>.</li>
-                                        </ul>
-
-                                        <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-200 pt-2">🎲 Sortear Confronto dentro da Folhinha</h4>
-                                        <p>Clicar em "Sortear Confronto" dentro da Folhinha identifica a fase atual do torneio e embaralha aleatoriamente as posições dos confrontos em 5 trocas dinâmicas, sem atraso de contagem regressiva.</p>
-
-                                        <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-200 pt-2">📤 Exportar Chave e Limpeza</h4>
-                                        <ul className="list-disc pl-5 space-y-1.5">
-                                            <li><strong className="text-white">Exportar chave:</strong> Copia o status completo de todas as fases, confrontos e placares formatados para texto, pronto para divulgação no Instagram ou grupos de WhatsApp.</li>
-                                            <li><strong className="text-white">Limpar:</strong> Zera a chave do torneio e devolve todos os MCs cadastrados de volta para as caixas do Modo Chaveamento.</li>
-                                        </ul>
-                                    </div>
-
-                                    <hr className="border-white/10" />
-
-                                    <div className="space-y-3">
-                                        <h3 className="text-base font-bold text-white">5. Modo Draft (Seleção de Capitães e Equipes)</h3>
-                                        <p>Modo dedicado para quando a batalha for disputada em trios, duplas ou quintetos e os capitães forem escolher seus companheiros.</p>
-                                        <ol className="list-decimal pl-5 space-y-1.5">
-                                            <li><strong className="text-yellow-400">Definição de Capitães:</strong> Arraste o MC para o primeiro espaço (identificado com borda dourada e coroa) para marcá-lo como Capitão.</li>
-                                            <li><strong className="text-white">Sortear a Ordem de Escolha:</strong> Clique no botão "Sortear Ordem". O sistema fará os trios/grupos trocarem de lugar 5 vezes na tela, definindo aleatoriamente a ordem em que os capitães escolhem seus parceiros.</li>
-                                            <li><strong className="text-green-400">Formação dos Grupos:</strong> Conforme os capitães escolhem, arraste os MCs restantes para dentro de cada caixa.</li>
-                                            <li><strong className="text-white">Ir pro Chaveamento:</strong> Assim que os grupos estiverem prontos, clique no botão central "Ir pro Chaveamento". Caso algum grupo esteja incompleto, o popup avisará antes da confirmação. Ao transferir, toda a estrutura formada é enviada para o Modo Chaveamento e o sistema reconhece e ajusta automaticamente o tamanho da chave (ex: 8 trios ajustam a chave para 8 vagas).</li>
-                                        </ol>
-                                    </div>
-
-                                    <hr className="border-white/10" />
-
-                                    <div className="space-y-3">
-                                        <h3 className="text-base font-bold text-white">6. Painel de Configurações (Ícone de Engrenagem)</h3>
-                                        <p>Acessível no topo do site, permite calibrar o evento:</p>
-                                        <ul className="list-disc pl-5 space-y-1.5">
-                                            <li><strong className="text-white">Tempo de Contagem:</strong> Define a duração da contagem regressiva nos sorteios (de 1s a 15s).</li>
-                                            <li><strong className="text-white">Quantidade de Mudanças (Draft):</strong> Define quantas vezes os cards trocam de lugar na animação de sorteio (de 1x a 10x).</li>
-                                            <li><strong className="text-white">Formato da Batalha:</strong> Alterna entre Solo (1), Dupla (2), Trio (3), Quarteto (4) ou Quinteto (5).</li>
-                                            <li><strong className="text-white">Tamanho da Chave:</strong> Ajusta a quantidade total de vagas do torneio entre 4, 8, 16 ou 32 vagas (configuração unificada entre Chaveamento e Folhinha).</li>
-                                            <li><strong className="text-white">Repetição no Sorteio:</strong> Chave para permitir ou proibir que um mesmo participante seja sorteado mais de uma vez.</li>
-                                        </ul>
-                                    </div>
-
-                                    <hr className="border-white/10" />
-
-                                    <div className="space-y-3">
-                                        <h3 className="text-base font-bold text-white">7. Fluxo Recomendado para um Evento Oficial</h3>
-                                        <pre className="bg-black/30 border border-white/10 rounded-2xl p-4 text-xs text-zinc-200 overflow-x-auto leading-snug font-mono">{`[1. Inscrições]
-   │
-   ▼
-Adicione todos os nomes colando a lista no menu "Lista de MC's".
-   │
-   ▼
-[2. Configuração do Evento]
-   │
-   ▼
-Abra a engrenagem e selecione o "Formato da Batalha" (Solo, Dupla, etc.) 
-e o "Tamanho da Chave" (ex: 16 vagas).
-   │
-   ▼
-[3. Formação das Caixas (Se Duplas/Trios)]
-   │
-   ├─► Opção A: Clique em "Sortear Duplas" para formar os times aleatoriamente.
-   └─► Opção B: Arraste os MC's para as vagas disponíveis.
-   │
-   ▼
-[4. Sorteio dos Confrontos]
-   │
-   ▼
-No Modo Chaveamento, clique em "Sortear Confronto" sucessivamente.
-Os nomes vão sendo alocados direto na chave da Folhinha.
-   │
-   ▼
-[5. Realização das Batalhas (Modo Folhinha)]
-   │
-   ▼
-Mude para o "Modo Folhinha":
-  • Anote os placares (0 a 5) ao lado de cada MC.
-  • Clique no vencedor de cada duelo para avançá-lo de fase.
-  • Repita até a grande final para consagrar o Campeão.
-   │
-   ▼
-[6. Encerramento]
-   │
-   ▼
-Clique em "Exportar chave" para copiar e postar o resultado oficial do evento.`}</pre>
-                                    </div>
-                                </div>
-                                
-                                <button 
-                                    onClick={() => setIsHelpOpen(false)} 
-                                    className="w-full mt-6 py-3.5 bg-white/10 hover:bg-white/20 text-zinc-100 text-sm font-semibold rounded-2xl cursor-pointer transition-colors backdrop-blur-md"
-                                >
-                                    Entendi
-                                </button>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            );
-        }
-
-        ReactDOM.render(<App />, document.getElementById('root'));
-    </script>
-</body>
-</html>
+                                            <li><strong className="text-white
